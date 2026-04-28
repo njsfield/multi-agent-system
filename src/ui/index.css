@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 222 47% 5%;
+    --foreground: 213 31% 91%;
+    --border: 217 33% 14%;
+    --input: 217 33% 11%;
+    --ring: 213 94% 68%;
+    --primary: 213 94% 68%;
+    --primary-foreground: 222 47% 5%;
+    --secondary: 217 33% 14%;
+    --secondary-foreground: 213 31% 91%;
+    --muted: 217 33% 14%;
+    --muted-foreground: 215 20% 55%;
+    --accent: 217 33% 17%;
+    --accent-foreground: 213 31% 91%;
+    --destructive: 0 63% 55%;
+    --destructive-foreground: 213 31% 91%;
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+  body { @apply bg-background text-foreground; }
+}
+
+/* Syntax highlighter overrides — remove default border-radius so CodeBlock controls it */
+.react-syntax-highlighter-line-number { user-select: none; }
