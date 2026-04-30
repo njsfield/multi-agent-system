@@ -10,7 +10,7 @@ CREATE TABLE messages (
 
 CREATE TABLE message_embeddings (
   id         BIGSERIAL PRIMARY KEY,
-  message_id BIGINT REFERENCES messages(id) ON DELETE CASCADE,
+  message_id BIGINT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
   content    TEXT NOT NULL,
   embedding  VECTOR(1536),
   created_at TIMESTAMPTZ DEFAULT now()
