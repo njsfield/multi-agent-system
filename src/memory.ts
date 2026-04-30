@@ -1,5 +1,5 @@
 export abstract class BaseMemory {
-  abstract add(content: string, metadata?: Record<string, unknown>): void;
+  abstract add(content: string, metadata?: Record<string, unknown>): Promise<void>;
   abstract query(query: string, limit?: number): Promise<string[]>;
   abstract getContext(maxItems?: number): Promise<string[]>;
 }
@@ -18,7 +18,7 @@ export class ListMemory extends BaseMemory {
     this.maxMemoryItems = maxMemoryItems;
   }
 
-  add(content: string, metadata: Record<string, unknown> = {}): void {
+  async add(content: string, metadata: Record<string, unknown> = {}): Promise<void> {
     this.memories.push({ content, metadata });
     if (this.memories.length > this.maxMemoryItems) {
       this.memories = this.memories.slice(-this.maxMemoryItems);
