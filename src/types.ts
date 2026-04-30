@@ -11,21 +11,21 @@ export interface BaseMessage {
 }
 
 export interface SystemMessage extends BaseMessage {
-  role: 'system';
+  role: "system";
 }
 
 export interface UserMessage extends BaseMessage {
-  role: 'user';
+  role: "user";
   name?: string;
 }
 
 export interface AssistantMessage extends BaseMessage {
-  role: 'assistant';
+  role: "assistant";
   toolCalls?: ToolCallRequest[];
 }
 
 export interface ToolMessage extends BaseMessage {
-  role: 'tool';
+  role: "tool";
   toolCallId: string;
   toolName: string;
   success: boolean;
@@ -33,7 +33,11 @@ export interface ToolMessage extends BaseMessage {
   requiresApproval?: boolean;
 }
 
-export type Message = SystemMessage | UserMessage | AssistantMessage | ToolMessage;
+export type Message =
+  | SystemMessage
+  | UserMessage
+  | AssistantMessage
+  | ToolMessage;
 
 export interface Usage {
   tokens: number;
@@ -58,20 +62,20 @@ export interface AgentEvent {
 }
 
 export interface TokenChunk {
-  type: 'token';
+  type: "token";
   content: string;
   source: string;
   timestamp: Date;
 }
 
 export interface ToolParameters {
-  type: 'object';
+  type: "object";
   properties: Record<string, unknown>;
   required: string[];
 }
 
 export interface ToolSchema {
-  type: 'function';
+  type: "function";
   function: {
     name: string;
     description: string;
@@ -81,9 +85,14 @@ export interface ToolSchema {
 
 export interface HistoryMessage {
   id: number;
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
   source: string;
-  contentType: 'text' | 'markdown';
+  contentType: "text" | "markdown";
   createdAt: string;
+}
+
+export interface AgentServerOptions {
+  staticDir?: string;
+  getHistory?: (limit: number) => Promise<HistoryMessage[]>;
 }
