@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { PgVectorMemory } from './pg-memory';
 import type pg from 'pg';
 import type OpenAI from 'openai';
@@ -72,7 +72,7 @@ describe('PgVectorMemory', () => {
   });
 
   describe('getContext', () => {
-    it('returns recent messages as "role: content" strings, oldest first', async () => {
+    it('returns most recent messages as "role: content" strings, oldest first', async () => {
       const query = vi.fn().mockResolvedValue({
         rows: [
           { role: 'user', content: 'hello' },
@@ -84,6 +84,10 @@ describe('PgVectorMemory', () => {
       const results = await memory.getContext(10);
 
       expect(results).toEqual(['user: hello', 'assistant: hi there']);
+      expect(query).toHaveBeenCalledWith(
+        expect.stringContaining('ORDER BY id DESC'),
+        [10],
+      );
     });
   });
 

@@ -75,7 +75,9 @@ export class PgVectorMemory extends BaseMemory {
 
   async getContext(maxItems = 20): Promise<string[]> {
     const { rows } = await this.pool.query<{ role: string; content: string }>(
-      'SELECT role, content FROM messages ORDER BY id ASC LIMIT $1',
+      `SELECT role, content
+       FROM (SELECT role, content, id FROM messages ORDER BY id DESC LIMIT $1) sub
+       ORDER BY id ASC`,
       [maxItems],
     );
     return rows.map(r => `${r.role}: ${r.content}`);
