@@ -1,4 +1,16 @@
+-- Connect to postgres to set up the DB and User
+-- (If these already exist from your last run, it might show errors, which is fine)
+CREATE USER admin WITH PASSWORD 'postgres';
+CREATE DATABASE tsagent OWNER admin;
+
+-- 1. Connect to the new database as SUPERUSER (postgres)
+\c tsagent postgres
+
+-- 2. Enable the extension as superuser
 CREATE EXTENSION IF NOT EXISTS vector;
+
+-- 3. Now switch to admin for the tables
+\c tsagent admin
 
 CREATE TABLE messages (
   id         BIGSERIAL PRIMARY KEY,
