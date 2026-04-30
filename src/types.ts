@@ -78,3 +78,12 @@ export interface ToolSchema {
     parameters: ToolParameters;
   };
 }
+
+export interface HistoryMessage {
+  id: number;
+  role: 'user' | 'assistant';
+  content: string;
+  source: string;
+  contentType: 'text' | 'markdown';
+  createdAt: string;
+}
