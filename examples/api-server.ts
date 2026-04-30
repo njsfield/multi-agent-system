@@ -1,5 +1,5 @@
-import * as fs from "fs";
-import * as path from "path";
+import path from "path";
+import { config } from "dotenv";
 import { OpenAIAgent } from "../src/openai-agent";
 import { FunctionTool } from "../src/tool";
 import { LoggingMiddleware } from "../src/middleware";
@@ -8,27 +8,9 @@ import OpenAI from "openai";
 import { PgVectorMemory, createPgPool } from "../src/pg-memory";
 import { ListMemory } from "../src/memory";
 import type { BaseMemory } from "../src/memory";
-import { HistoryMessage } from "src";
+import type { HistoryMessage } from "../src/types";
 
-// ---------------------------------------------------------------------------
-// Load .env
-// ---------------------------------------------------------------------------
-
-try {
-  const envPath = path.join(__dirname, "../../exercises/.env");
-  const raw = fs.readFileSync(envPath, "utf-8");
-  for (const line of raw.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const eqIndex = trimmed.indexOf("=");
-    if (eqIndex === -1) continue;
-    const key = trimmed.slice(0, eqIndex).trim();
-    const val = trimmed.slice(eqIndex + 1).trim();
-    if (key && !process.env[key]) process.env[key] = val;
-  }
-} catch {
-  // rely on env vars already set
-}
+config({ path: path.join(__dirname, "../.env") });
 
 // ---------------------------------------------------------------------------
 // WMO weather code → human-readable description
