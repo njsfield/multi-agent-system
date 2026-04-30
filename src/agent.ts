@@ -1,8 +1,12 @@
-import { BaseChatClient } from './client';
-import { BaseTool } from './tool';
-import { BaseMemory } from './memory';
-import { AgentContext } from './context';
-import { BaseMiddleware, MiddlewareChain, MiddlewareContext } from './middleware';
+import { BaseChatClient } from "./client";
+import { BaseTool } from "./tool";
+import { BaseMemory } from "./memory";
+import { AgentContext } from "./context";
+import {
+  BaseMiddleware,
+  MiddlewareChain,
+  MiddlewareContext,
+} from "./middleware";
 import {
   Message,
   SystemMessage,
@@ -15,7 +19,7 @@ import {
   ToolParameters,
   TokenChunk,
   ChatCompletionResult,
-} from './types';
+} from "./types";
 
 export abstract class BaseAgent {
   name: string;
@@ -51,11 +55,16 @@ export abstract class BaseAgent {
   }
 
   abstract run(task: string | UserMessage | Message[]): Promise<AgentResponse>;
-  abstract runStream(task: string | UserMessage | Message[], signal?: AbortSignal): AsyncGenerator<Message | AgentEvent | TokenChunk>;
+  abstract runStream(
+    task: string | UserMessage | Message[],
+    signal?: AbortSignal,
+  ): AsyncGenerator<Message | AgentEvent | TokenChunk>;
 
   protected normalizeTask(task: string | UserMessage | Message[]): Message[] {
-    if (typeof task === 'string') {
-      return [{ role: 'user', content: task, source: 'user', timestamp: new Date() }];
+    if (typeof task === "string") {
+      return [
+        { role: "user", content: task, source: "user", timestamp: new Date() },
+      ];
     }
     if (!Array.isArray(task)) return [task];
     return task;
@@ -63,20 +72,39 @@ export abstract class BaseAgent {
 
   protected getToolsForLLM(): ToolSchema[] | undefined {
     if (!this.tools.length) return undefined;
-    return this.tools.map(t => t.toLLMFormat());
+    return this.tools.map((t) => t.toLLMFormat());
   }
 }
 
 export class Agent extends BaseAgent {
   async run(task: string | UserMessage | Message[]): Promise<AgentResponse> {
     const taskMessages = this.normalizeTask(task);
+    const userContent =
+      taskMessages.find((m) => m.role === "user")?.content ?? "";
+
+    let instructions = this.instructions;
+    if (this.memory) {
+      const [recentCtx, relevantCtx] = await Promise.all([
+        this.memory.getContext(20),
+        this.memory.query(userContent, 5),
+      ]);
+      if (recentCtx.length)
+        instructions += `\n\nRecent conversation:\n${recentCtx.join("\n")}`;
+      if (relevantCtx.length)
+        instructions += `\n\nRelevant past context:\n${relevantCtx.join("\n")}`;
+    }
+
     const systemMessage: SystemMessage = {
-      role: 'system',
-      content: this.instructions,
-      source: 'system',
+      role: "system",
+      content: instructions,
+      source: "system",
       timestamp: new Date(),
     };
-    const llmMessages: Message[] = [systemMessage, ...this.context.messages, ...taskMessages];
+    const llmMessages: Message[] = [
+      systemMessage,
+      ...this.context.messages,
+      ...taskMessages,
+    ];
     const tools = this.getToolsForLLM();
     const responses: Message[] = [];
 
@@ -84,7 +112,11 @@ export class Agent extends BaseAgent {
       const modelCtx = this.buildModelCtx(llmMessages);
       await this.middlewareChain.execute(modelCtx);
       let completionResult = await this.modelClient.create(llmMessages, tools);
-      completionResult = (await this.middlewareChain.executeResponse(modelCtx, completionResult) as typeof completionResult) ?? completionResult;
+      completionResult =
+        ((await this.middlewareChain.executeResponse(
+          modelCtx,
+          completionResult,
+        )) as typeof completionResult) ?? completionResult;
 
       const assistantMessage = completionResult.message;
       llmMessages.push(assistantMessage);
@@ -92,6 +124,14 @@ export class Agent extends BaseAgent {
       if (!assistantMessage.toolCalls?.length) {
         this.context.addMessage(assistantMessage);
         responses.push(assistantMessage);
+
+        if (this.memory) {
+          await this.memory.add(userContent, { role: "user", source: "user" });
+          await this.memory.add(assistantMessage.content, {
+            role: "assistant",
+            source: this.name,
+          });
+        }
         break;
       }
 
@@ -103,15 +143,37 @@ export class Agent extends BaseAgent {
     return { messages: responses };
   }
 
-  async *runStream(task: string | UserMessage | Message[], signal?: AbortSignal): AsyncGenerator<Message | AgentEvent | TokenChunk> {
+  async *runStream(
+    task: string | UserMessage | Message[],
+    signal?: AbortSignal,
+  ): AsyncGenerator<Message | AgentEvent | TokenChunk> {
     const taskMessages = this.normalizeTask(task);
+    const userContent =
+      taskMessages.find((m) => m.role === "user")?.content ?? "";
+
+    let instructions = this.instructions;
+    if (this.memory) {
+      const [recentCtx, relevantCtx] = await Promise.all([
+        this.memory.getContext(20),
+        this.memory.query(userContent, 5),
+      ]);
+      if (recentCtx.length)
+        instructions += `\n\nRecent conversation:\n${recentCtx.join("\n")}`;
+      if (relevantCtx.length)
+        instructions += `\n\nRelevant past context:\n${relevantCtx.join("\n")}`;
+    }
+
     const systemMessage: SystemMessage = {
-      role: 'system',
-      content: this.instructions,
-      source: 'system',
+      role: "system",
+      content: instructions,
+      source: "system",
       timestamp: new Date(),
     };
-    const llmMessages: Message[] = [systemMessage, ...this.context.messages, ...taskMessages];
+    const llmMessages: Message[] = [
+      systemMessage,
+      ...this.context.messages,
+      ...taskMessages,
+    ];
     const tools = this.getToolsForLLM();
 
     for (let i = 0; i < this.maxIterations; i++) {
@@ -123,11 +185,14 @@ export class Agent extends BaseAgent {
       let completionResult: ChatCompletionResult;
 
       if (this.streamTokens) {
-        // --- Streaming path: yield tokens as they arrive ---
         let finalResult: ChatCompletionResult | undefined;
 
-        for await (const item of this.modelClient.createStream(llmMessages, tools, signal)) {
-          if ((item as TokenChunk).type === 'token') {
+        for await (const item of this.modelClient.createStream(
+          llmMessages,
+          tools,
+          signal,
+        )) {
+          if ((item as TokenChunk).type === "token") {
             yield item as TokenChunk;
           } else {
             finalResult = item as ChatCompletionResult;
@@ -135,46 +200,59 @@ export class Agent extends BaseAgent {
         }
 
         if (!finalResult) break;
-        completionResult = (await this.middlewareChain.executeResponse(modelCtx, finalResult) as ChatCompletionResult) ?? finalResult;
+        completionResult =
+          ((await this.middlewareChain.executeResponse(
+            modelCtx,
+            finalResult,
+          )) as ChatCompletionResult) ?? finalResult;
       } else {
-        // --- Non-streaming path: wait for full response ---
         let result = await this.modelClient.create(llmMessages, tools, signal);
-        completionResult = (await this.middlewareChain.executeResponse(modelCtx, result) as typeof result) ?? result;
+        completionResult =
+          ((await this.middlewareChain.executeResponse(
+            modelCtx,
+            result,
+          )) as typeof result) ?? result;
       }
 
       const assistantMessage = completionResult.message;
-      // Tag the source with the agent name so consumers can identify it
       const taggedMessage: Message = { ...assistantMessage, source: this.name };
       llmMessages.push(taggedMessage);
 
       if (!assistantMessage.toolCalls?.length) {
         this.context.addMessage(taggedMessage);
-        // Always yield the final message — the server uses it to add contentType
-        // for the frontend (markdown detection). Tokens already streamed separately.
         yield taggedMessage;
+
+        if (this.memory) {
+          await this.memory.add(userContent, { role: "user", source: "user" });
+          await this.memory.add(assistantMessage.content, {
+            role: "assistant",
+            source: this.name,
+          });
+        }
         break;
       }
 
-      // Execute tool calls and continue the loop
       for (const toolCall of assistantMessage.toolCalls) {
         llmMessages.push(await this.runToolCall(toolCall));
       }
     }
   }
 
-  asTool(resultStrategy: 'last:1' | 'all' = 'last:1'): AgentTool {
+  asTool(resultStrategy: "last:1" | "all" = "last:1"): AgentTool {
     return new AgentTool(this, resultStrategy);
   }
 
   private buildModelCtx(llmMessages: Message[]): MiddlewareContext {
     return {
-      operation: 'model_call',
+      operation: "model_call",
       agentName: this.name,
       agentContext: this.context,
       data: {
-        model: (this.modelClient as unknown as { model?: string }).model ?? 'unknown',
+        model:
+          (this.modelClient as unknown as { model?: string }).model ??
+          "unknown",
         messages: llmMessages,
-        input: llmMessages[llmMessages.length - 1]?.content ?? '',
+        input: llmMessages[llmMessages.length - 1]?.content ?? "",
       },
       metadata: {},
     };
@@ -182,7 +260,7 @@ export class Agent extends BaseAgent {
 
   private async runToolCall(toolCall: ToolCallRequest): Promise<ToolMessage> {
     const toolCtx: MiddlewareContext = {
-      operation: 'tool_call',
+      operation: "tool_call",
       agentName: this.name,
       agentContext: this.context,
       data: {
@@ -195,22 +273,28 @@ export class Agent extends BaseAgent {
     };
     await this.middlewareChain.execute(toolCtx);
     let toolResult = await this.executeToolCall(toolCall);
-    toolResult = (await this.middlewareChain.executeResponse(toolCtx, toolResult) as typeof toolResult) ?? toolResult;
+    toolResult =
+      ((await this.middlewareChain.executeResponse(
+        toolCtx,
+        toolResult,
+      )) as typeof toolResult) ?? toolResult;
     return toolResult;
   }
 
-  private async executeToolCall(toolCall: ToolCallRequest): Promise<ToolMessage> {
-    const tool = this.tools.find(t => t.name === toolCall.toolName);
+  private async executeToolCall(
+    toolCall: ToolCallRequest,
+  ): Promise<ToolMessage> {
+    const tool = this.tools.find((t) => t.name === toolCall.toolName);
     if (!tool) {
       return {
-        role: 'tool',
+        role: "tool",
         content: `Error: Tool '${toolCall.toolName}' not found.`,
         toolCallId: toolCall.callId,
         toolName: toolCall.toolName,
         source: this.name,
         timestamp: new Date(),
         success: false,
-        error: 'Tool not found',
+        error: "Tool not found",
       };
     }
 
@@ -218,7 +302,7 @@ export class Agent extends BaseAgent {
       let result = tool.execute(toolCall.parameters);
       if (result instanceof Promise) result = await result;
       return {
-        role: 'tool',
+        role: "tool",
         content: String(result),
         toolCallId: toolCall.callId,
         toolName: toolCall.toolName,
@@ -229,7 +313,7 @@ export class Agent extends BaseAgent {
     } catch (e) {
       const error = e instanceof Error ? e.message : String(e);
       return {
-        role: 'tool',
+        role: "tool",
         content: `Error executing tool '${toolCall.toolName}': ${error}`,
         toolCallId: toolCall.callId,
         toolName: toolCall.toolName,
@@ -244,9 +328,9 @@ export class Agent extends BaseAgent {
 
 export class AgentTool extends BaseTool {
   private agent: Agent;
-  private resultStrategy: 'last:1' | 'all';
+  private resultStrategy: "last:1" | "all";
 
-  constructor(agent: Agent, resultStrategy: 'last:1' | 'all' = 'last:1') {
+  constructor(agent: Agent, resultStrategy: "last:1" | "all" = "last:1") {
     super(agent.name, agent.instructions);
     this.agent = agent;
     this.resultStrategy = resultStrategy;
@@ -254,26 +338,29 @@ export class AgentTool extends BaseTool {
 
   get parameters(): ToolParameters {
     return {
-      type: 'object',
+      type: "object",
       properties: {
-        task: { type: 'string', description: 'The task to give the agent.' },
+        task: { type: "string", description: "The task to give the agent." },
       },
-      required: ['task'],
+      required: ["task"],
     };
   }
 
   async execute(parameters: Record<string, unknown>): Promise<string> {
-    const task = String(parameters['task'] ?? '');
+    const task = String(parameters["task"] ?? "");
     const response = await this.agent.run(task);
     return this.applyStrategy(response.messages);
   }
 
   private applyStrategy(messages: Message[]): string {
-    if (!messages.length) return '';
-    if (this.resultStrategy === 'all') {
-      return messages.map(m => m.content).join('\n');
+    if (!messages.length) return "";
+    if (this.resultStrategy === "all") {
+      return messages.map((m) => m.content).join("\n");
     }
-    const n = parseInt(this.resultStrategy.split(':')[1] ?? '1', 10);
-    return messages.slice(-n).map(m => m.content).join('\n');
+    const n = parseInt(this.resultStrategy.split(":")[1] ?? "1", 10);
+    return messages
+      .slice(-n)
+      .map((m) => m.content)
+      .join("\n");
   }
 }
