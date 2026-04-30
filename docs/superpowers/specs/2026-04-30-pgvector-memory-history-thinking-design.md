@@ -81,13 +81,15 @@ The existing `BaseAgent` declares `protected memory?: BaseMemory` but never call
 
 ```
 1. memory.getContext(20)
-   → inject returned strings as historical messages into AgentContext
-     (prepended before the current task messages in llmMessages)
+   → returns recent content strings stored as "<role>: <content>"
+   → appended to the system message as a "Recent conversation:\n..." block
 
 2. memory.query(userMessageContent, 5)
-   → inject top-K results as a "Relevant past context:" block
-     appended to the system message content
+   → returns semantically similar content strings
+   → appended to the system message as a "Relevant past context:\n..." block
 ```
+
+Both are injected as text into the system message. No typed `Message` reconstruction is needed, and `BaseMemory`'s interface is unchanged.
 
 **After the final assistant message is produced:**
 
@@ -117,9 +119,11 @@ export interface HistoryMessage {
 }
 ```
 
-Add `GET /history` endpoint that calls `getHistory(limit)` where `limit` comes from the `?limit=` query param (default 50, max 100). Returns a JSON array. If `getHistory` is not provided the endpoint returns 404.
+Add `GET /history` endpoint that calls `getHistory(limit)` where `limit` comes from the `?limit=` query param (default 50, max 100). Returns a JSON array ordered oldest-first. If `getHistory` is not provided the endpoint returns 404.
 
 The server itself has no direct postgres dependency — the caller wires in the query function.
+
+`HistoryMessage.contentType` is computed server-side using the same `isMarkdown()` helper already in `server.ts`, so the UI does not need to re-derive it.
 
 ### `examples/api-server.ts` changes
 
@@ -142,32 +146,36 @@ A `useEffect` (runs once on mount) fetches `GET /history?limit=50`. The response
 
 **`isThinking` state:**
 
-A `boolean` state variable in the hook:
-- Set to `true` inside `sendMessage`, immediately after appending the assistant placeholder message
-- Set to `false` when the first `token` or `message` SSE event is received
+Add `isThinking` to the `UIMessage` interface (alongside `isStreaming`):
 
-Exposed on the hook return:
 ```typescript
-return { messages, isStreaming, isThinking, sendMessage, cancel };
+export interface UIMessage {
+  // ...existing fields...
+  isThinking: boolean;
+}
 ```
+
+- Set to `true` on the assistant placeholder message created in `sendMessage`
+- Set to `false` (via `patchLastAssistant`) when the first `token` or `message` SSE event is received
+- History-hydrated messages always have `isThinking: false`
+
+The hook return is unchanged — `isThinking` travels on the message object itself, not as a separate hook value.
 
 ### `Message.tsx`
 
-Pass `isThinking` as a prop on the assistant message (set from the hook, not derived inside the component).
-
-When `isThinking` is true and content is empty, render a "Thinking…" label instead of the blinking cursor:
+Destructure `isThinking` from `UIMessage` props. When `isThinking` is true, render a "Thinking…" label instead of the blinking cursor:
 
 ```tsx
-{isThinking && !content ? (
+{isThinking ? (
   <span className="animate-pulse text-muted-foreground">Thinking…</span>
 ) : (
-  // existing streaming content + cursor render
+  // existing content + cursor render
 )}
 ```
 
 ### `App.tsx`
 
-Pass `isThinking` from `useChat` to the last assistant `Message` in the list (the one currently streaming).
+No changes required — `isThinking` is on each message object, not a separate prop.
 
 ### `sseClient.ts`
 
