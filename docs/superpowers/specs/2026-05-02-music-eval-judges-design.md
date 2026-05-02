@@ -42,17 +42,22 @@ interface JudgeScore {
   justification: string
 }
 
-interface EvalResult {
-  configName: string  // "single-agent" | "round-robin" | "ai-orchestrated" | "direct"
+// Returned by RunConfig — no judge scores yet (those are computed in index.ts)
+interface ConfigResult {
+  configName: string
   taskId: string
-  response: string    // final answer from the configuration
+  response: string
   usage: { tokens: number; tokensOutput: number }
-  judgeScores: JudgeScore[]
-  averageScore: number               // mean of judgeScores[].score
-  scorePerThousandTokens: number     // averageScore / (totalTokens / 1000)
 }
 
-type RunConfig = (task: MusicTask) => Promise<EvalResult>
+// Fully populated after judge scoring in index.ts
+interface EvalResult extends ConfigResult {
+  judgeScores: JudgeScore[]
+  averageScore: number               // mean of judgeScores[].score
+  scorePerThousandTokens: number     // averageScore / ((tokens + tokensOutput) / 1000)
+}
+
+type RunConfig = (task: MusicTask) => Promise<ConfigResult>
 ```
 
 ---
@@ -82,6 +87,8 @@ Prepends this shared preamble to every judge prompt:
 
 `VerificationJudge` is the only judge that includes `task.groundTruth` in its prompt.
 
+`ToolUseJudge` receives the raw response text for all configs. For tool-less configs (`direct`, `round-robin`), the response contains no tool call evidence and the judge will naturally score low — this is intentional and illustrates what the agentic scaffolding adds.
+
 ---
 
 ## Music Tasks (`tasks.ts`)
@@ -100,7 +107,7 @@ K:C
 |---|---|---|
 | `transcribe` | Transcribe the score to readable notation (note names, durations, bar lines) | "Bar 1: C quarter, D quarter, E quarter, F quarter. Bar 2: G whole. Bar 3: E quarter, D quarter, C half. Bar 4: G, whole." |
 | `find-composer` | The score is marked "after BWV 147 fragment, adapted". Identify the likely composer. | "Johann Sebastian Bach" |
-| `generate` | Using only the notes C D E G A (pentatonic), compose an 8-bar melody in 4/4 time following classical conventions | Reference 8-bar pentatonic melody in C major with balanced phrases |
+| `generate` | Using only the notes C D E G A (pentatonic), compose an 8-bar melody in 4/4 time following classical conventions | "Bar 1: C E G E | Bar 2: A G E C | Bar 3: D E G A | Bar 4: G4 | Bar 5: E G A G | Bar 6: E D C2 | Bar 7: G A G E | Bar 8: C4" |
 | `check-facts` | Given 5 statements about J.S. Bach (2 wrong: wrong birth year, wrong number of children), identify the incorrect ones | "Bach was born in 1675" and "Bach had 10 children" are incorrect |
 
 ---
@@ -109,13 +116,17 @@ K:C
 
 Each config is a `RunConfig` function `(task) => Promise<EvalResult>`.
 
+### Token tracking for agent-based configs
+
+`Agent.run()` returns `AgentResponse` (just `messages[]`) with no usage exposed. To capture token counts, `configs.ts` defines a small `TokenCountingMiddleware` that implements `BaseMiddleware`. Its `executeResponse` hook receives `ChatCompletionResult` (which has `usage`) and accumulates totals. Each config factory creates a fresh middleware instance per run and reads its accumulated counts after `agent.run()` completes.
+
 ### `single-agent`
 `OpenAIAgent` with three music `FunctionTool` stubs:
 - `lookup_composer(name)` → returns biographical stub
 - `check_theory(question)` → returns music theory guidance stub  
 - `transcribe_notation(abc)` → returns transcription guidance stub
 
-Captures `usage` by summing token counts across the agent's `AgentResponse` messages (note: `Agent.run()` returns messages; usage must be tracked via a logging middleware or by summing any `usage` fields available on `ChatCompletionResult` — if not exposed on `AgentResponse`, default to `{ tokens: 0, tokensOutput: 0 }` and document the limitation).
+Uses `TokenCountingMiddleware` to capture usage.
 
 ### `round-robin`
 `RoundRobinOrchestrator` with two agents:
