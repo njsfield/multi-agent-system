@@ -1,4 +1,6 @@
 -- Seed messages across 3 topics: weather, health, finance
+-- Note: not idempotent for messages — running twice duplicates rows.
+-- To reset: TRUNCATE messages CASCADE; then re-run this file.
 INSERT INTO messages (role, content, source) VALUES
   ('user',      'What is the weather like in London today?',                       'user'),
   ('assistant', 'London is currently 14°C with light rain and overcast skies.',    'weather-agent'),
@@ -7,15 +9,15 @@ INSERT INTO messages (role, content, source) VALUES
   ('user',      'What is the UV index in Tokyo tomorrow?',                         'user'),
 
   ('user',      'How much water should I drink each day?',                         'user'),
-  ('assistant', 'Most adults need around 2 litres of water per day.',              'weather-agent'),
+  ('assistant', 'Most adults need around 2 litres of water per day.',              'assistant'),
   ('user',      'What are the benefits of walking 10,000 steps a day?',            'user'),
-  ('assistant', 'Daily walking improves cardiovascular health and mood.',          'weather-agent'),
+  ('assistant', 'Daily walking improves cardiovascular health and mood.',          'assistant'),
   ('user',      'How many hours of sleep does an adult need?',                     'user'),
 
   ('user',      'What is a good way to start saving money?',                       'user'),
-  ('assistant', 'Start with a monthly budget and automate a savings transfer.',    'weather-agent'),
+  ('assistant', 'Start with a monthly budget and automate a savings transfer.',    'assistant'),
   ('user',      'Should I invest in index funds or individual stocks?',            'user'),
-  ('assistant', 'Index funds offer diversification and lower risk for beginners.', 'weather-agent'),
+  ('assistant', 'Index funds offer diversification and lower risk for beginners.', 'assistant'),
   ('user',      'What is compound interest and why does it matter?',               'user');
 
 -- Pre-built mindmap graph so the UI works immediately without real embeddings
