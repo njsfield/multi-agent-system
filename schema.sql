@@ -29,3 +29,9 @@ CREATE TABLE message_embeddings (
 );
 
 CREATE INDEX ON message_embeddings USING hnsw (embedding vector_cosine_ops);
+
+CREATE TABLE mindmap_cache (
+  id         INT PRIMARY KEY DEFAULT 1,
+  graph      JSONB NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
