@@ -40,6 +40,7 @@ Single row, upserted in place after each turn. The `graph` JSONB shape:
 interface MindmapGraph {
   nodes: MindmapNode[];
   edges: MindmapEdge[];
+  updatedAt?: string;  // ISO timestamp from mindmap_cache.updated_at
 }
 interface MindmapNode {
   id: string;
@@ -82,7 +83,9 @@ Add `MindmapNode`, `MindmapEdge`, and `MindmapGraph` interfaces as above.
 
 Constructor: `(pool: pg.Pool, openai: OpenAI)`
 
-One public method: `recompute(): Promise<void>`
+Public methods:
+- `recompute(): Promise<void>` — runs the clustering pipeline and upserts the result; guarded by an `isRecomputing` boolean so concurrent calls (two messages arriving quickly) skip rather than overlap
+- `getGraph(): Promise<MindmapGraph>` — reads the current `mindmap_cache` row; returns `{ nodes: [], edges: [] }` if no row exists yet
 
 ### Pipeline inside `recompute()`
 
@@ -155,7 +158,7 @@ async function* (message, signal) {
 }
 ```
 
-`MindmapService` also needs a `getGraph(): Promise<MindmapGraph>` method — reads the current `mindmap_cache` row or returns `{ nodes: [], edges: [] }` if none exists.
+`getGraph()` is defined on `MindmapService` (see Section 2).
 
 ### `vite.config.ts`
 
@@ -231,8 +234,7 @@ yarn add reactflow
 | Package | Purpose |
 |---------|---------|
 | `reactflow` | Interactive graph UI component |
-| `ml-kmeans` | k-means clustering of embedding vectors |
-| `@types/ml-kmeans` | TypeScript types (if needed — package may include them) |
+| `ml-kmeans` | k-means clustering of embedding vectors (ships its own TypeScript types) |
 
 ---
 
