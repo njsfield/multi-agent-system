@@ -29,3 +29,28 @@ CREATE TABLE message_embeddings (
 );
 
 CREATE INDEX ON message_embeddings USING hnsw (embedding vector_cosine_ops);
+
+CREATE TABLE flashcards (
+  id                BIGSERIAL PRIMARY KEY,
+  question          TEXT NOT NULL,
+  answer            TEXT NOT NULL,
+  topic_label       TEXT,
+  source_message_id BIGINT REFERENCES messages(id) ON DELETE SET NULL,
+  embedding         VECTOR(1536),
+  interval_days     INT NOT NULL DEFAULT 1,
+  ease_factor       FLOAT NOT NULL DEFAULT 2.5,
+  repetitions       INT NOT NULL DEFAULT 0,
+  next_due_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_reviewed_at  TIMESTAMPTZ,
+  created_at        TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX ON flashcards USING hnsw (embedding vector_cosine_ops);
+
+CREATE TABLE flashcard_reviews (
+  id           BIGSERIAL PRIMARY KEY,
+  flashcard_id BIGINT NOT NULL REFERENCES flashcards(id) ON DELETE CASCADE,
+  score        TEXT NOT NULL CHECK (score IN ('very_easy','easy','hard','fail')),
+  sm2_quality  INT NOT NULL,
+  reviewed_at  TIMESTAMPTZ DEFAULT now()
+);
