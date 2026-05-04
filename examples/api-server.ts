@@ -6,6 +6,7 @@ import { LoggingMiddleware } from "../src/middleware";
 import { createAgentServer } from "../src/server";
 import OpenAI from "openai";
 import { PgVectorMemory, createPgPool } from "../src/pg-memory";
+import { MindmapService } from "../src/mindmap";
 import { ListMemory } from "../src/memory";
 import type { BaseMemory } from "../src/memory";
 import type { HistoryMessage } from "../src/types";
@@ -232,6 +233,7 @@ const PORT = 3000;
   // Attempt postgres connection; fall back to in-memory if unavailable
   let agentMemory: BaseMemory;
   let getHistory: ((limit: number) => Promise<HistoryMessage[]>) | undefined;
+  let mindmapService: MindmapService | undefined;
 
   const DATABASE_URL =
     process.env["DATABASE_URL"] ?? "postgresql://localhost/tsagent";
@@ -243,6 +245,7 @@ const PORT = 3000;
     const pgMemory = new PgVectorMemory(pool, openaiClient);
     agentMemory = pgMemory;
     getHistory = (limit) => pgMemory.getHistory(limit);
+    mindmapService = new MindmapService(pool, openaiClient);
     console.log("[startup] postgres memory: connected");
   } catch (err) {
     console.warn(
@@ -269,13 +272,15 @@ chance of rain, and any notable hourly highlights. Be friendly and concise.`,
   }
 
   const app = createAgentServer(
-    (message, signal) => {
+    async function* (message, signal) {
       const agent = createWeatherAgent();
-      return agent.runStream(message, signal);
+      yield* agent.runStream(message, signal);
+      mindmapService?.recompute().catch(console.error);
     },
     {
       staticDir: path.join(__dirname, "../dist/ui"),
       getHistory,
+      getMindmap: mindmapService ? () => mindmapService!.getGraph() : undefined,
     },
   );
 
