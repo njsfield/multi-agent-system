@@ -59,10 +59,9 @@ export class FlashcardService {
       question: string;
       topic_label: string | null;
       last_score: string | null;
-      interval_days: number;
       next_due_at: string;
     }>(
-      `SELECT f.id, f.question, f.topic_label, f.interval_days, f.next_due_at,
+      `SELECT f.id, f.question, f.topic_label, f.next_due_at,
               r.score AS last_score
        FROM flashcards f
        LEFT JOIN LATERAL (
@@ -93,33 +92,44 @@ export class FlashcardService {
     const quality = SCORE_TO_QUALITY[score];
     if (quality === undefined) throw new Error(`Invalid score: ${score}`);
 
-    const { rows } = await this.pool.query<{
-      interval_days: number;
-      ease_factor: number;
-      repetitions: number;
-    }>('SELECT interval_days, ease_factor, repetitions FROM flashcards WHERE id = $1', [id]);
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
 
-    if (!rows[0]) throw new Error(`Flashcard ${id} not found`);
+      const { rows } = await client.query<{
+        interval_days: number;
+        ease_factor: number;
+        repetitions: number;
+      }>('SELECT interval_days, ease_factor, repetitions FROM flashcards WHERE id = $1', [id]);
 
-    const next = applySm2(
-      { intervalDays: rows[0].interval_days, easeFactor: rows[0].ease_factor, repetitions: rows[0].repetitions },
-      quality,
-    );
+      if (!rows[0]) throw new Error(`Flashcard ${id} not found`);
 
-    await this.pool.query(
-      `UPDATE flashcards
-       SET interval_days = $1, ease_factor = $2, repetitions = $3,
-           next_due_at = $4, last_reviewed_at = now()
-       WHERE id = $5`,
-      [next.intervalDays, next.easeFactor, next.repetitions, next.nextDueAt, id],
-    );
+      const next = applySm2(
+        { intervalDays: rows[0].interval_days, easeFactor: rows[0].ease_factor, repetitions: rows[0].repetitions },
+        quality,
+      );
 
-    await this.pool.query(
-      'INSERT INTO flashcard_reviews (flashcard_id, score, sm2_quality) VALUES ($1, $2, $3)',
-      [id, score, quality],
-    );
+      await client.query(
+        `UPDATE flashcards
+         SET interval_days = $1, ease_factor = $2, repetitions = $3,
+             next_due_at = $4, last_reviewed_at = now()
+         WHERE id = $5`,
+        [next.intervalDays, next.easeFactor, next.repetitions, next.nextDueAt, id],
+      );
 
-    return next.nextDueAt;
+      await client.query(
+        'INSERT INTO flashcard_reviews (flashcard_id, score, sm2_quality) VALUES ($1, $2, $3)',
+        [id, score, quality],
+      );
+
+      await client.query('COMMIT');
+      return next.nextDueAt;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   async getById(id: number): Promise<FlashcardCard | null> {

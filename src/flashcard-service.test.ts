@@ -90,17 +90,21 @@ describe('FlashcardService', () => {
 
   describe('applyReview', () => {
     it('updates flashcard SM-2 state and inserts a review record', async () => {
-      const query = vi.fn()
-        .mockResolvedValueOnce({ rows: [{ interval_days: 1, ease_factor: 2.5, repetitions: 0 }] })
-        .mockResolvedValueOnce({ rows: [] })
-        .mockResolvedValueOnce({ rows: [] });
-      const service = new FlashcardService(makePool(query));
+      const clientQuery = vi.fn()
+        .mockResolvedValueOnce({ rows: [] })  // BEGIN
+        .mockResolvedValueOnce({ rows: [{ interval_days: 1, ease_factor: 2.5, repetitions: 0 }] })  // SELECT
+        .mockResolvedValueOnce({ rows: [] })  // UPDATE
+        .mockResolvedValueOnce({ rows: [] })  // INSERT
+        .mockResolvedValueOnce({ rows: [] }); // COMMIT
+      const client = { query: clientQuery, release: vi.fn() };
+      const pool = { connect: vi.fn().mockResolvedValue(client) } as unknown as pg.Pool;
+      const service = new FlashcardService(pool);
 
       await service.applyReview(1, 'easy');
 
-      expect(query).toHaveBeenCalledTimes(3);
-      expect(String(query.mock.calls[1]![0])).toMatch(/UPDATE flashcards/);
-      expect(String(query.mock.calls[2]![0])).toMatch(/INSERT INTO flashcard_reviews/);
+      expect(clientQuery).toHaveBeenCalledTimes(5);
+      expect(String(clientQuery.mock.calls[2]![0])).toMatch(/UPDATE flashcards/);
+      expect(String(clientQuery.mock.calls[3]![0])).toMatch(/INSERT INTO flashcard_reviews/);
     });
 
     it('throws for unknown score', async () => {
