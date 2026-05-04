@@ -11,7 +11,7 @@
     "forceConsistentCasingInFileNames": true,
     "jsx": "react-jsx",
     "baseUrl": ".",
-    "paths": { "@/*": ["src/ui/*"] },
+    "paths": { "@/*": ["src/ui/*"], "ml-kmeans": ["node_modules/ml-kmeans/lib/index.d.ts"] },
     "types": ["node"]
   },
   "include": ["src/**/*", "examples/**/*.ts"],

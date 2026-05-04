@@ -6,6 +6,7 @@ import { LoggingMiddleware } from "../src/middleware";
 import { createAgentServer } from "../src/server";
 import OpenAI from "openai";
 import { PgVectorMemory, createPgPool } from "../src/pg-memory";
+import { MindmapService } from "../src/mindmap";
 import { ListMemory } from "../src/memory";
 import type { BaseMemory } from "../src/memory";
 import type { HistoryMessage } from "../src/types";
@@ -237,8 +238,11 @@ const PORT = 3000;
   let agentMemory: BaseMemory;
   let getHistory: ((limit: number) => Promise<HistoryMessage[]>) | undefined;
   let getFlashcard: (() => Promise<FlashcardCard | null>) | undefined;
-  let reviewFlashcard: ((id: number, score: string) => Promise<Date>) | undefined;
+  let reviewFlashcard:
+    | ((id: number, score: string) => Promise<Date>)
+    | undefined;
   let flashcardExtractor: FlashcardExtractor | undefined;
+  let mindmapService: MindmapService | undefined;
 
   const DATABASE_URL =
     process.env["DATABASE_URL"] ?? "postgresql://localhost/tsagent";
@@ -256,7 +260,9 @@ const PORT = 3000;
     flashcardExtractor = new FlashcardExtractor(pool, openaiClient);
 
     getFlashcard = async () => {
-      const response = await flashcardAgent.run('Select a flashcard for review.');
+      const response = await flashcardAgent.run(
+        "Select a flashcard for review.",
+      );
       const lastMsg = response.messages.at(-1);
       if (!lastMsg) return null;
       try {
@@ -270,8 +276,10 @@ const PORT = 3000;
       }
     };
 
-    reviewFlashcard = (id: number, score: string) => flashcardService.applyReview(id, score);
+    reviewFlashcard = (id: number, score: string) =>
+      flashcardService.applyReview(id, score);
 
+    mindmapService = new MindmapService(pool, openaiClient);
     console.log("[startup] postgres memory: connected");
   } catch (err) {
     console.warn(
@@ -299,23 +307,32 @@ chance of rain, and any notable hourly highlights. Be friendly and concise.`,
 
   const app = createAgentServer(
     async function* (message, signal) {
-      let lastAssistantContent = '';
-      for await (const item of createWeatherAgent().runStream(message, signal)) {
+      let lastAssistantContent = "";
+      for await (const item of createWeatherAgent().runStream(
+        message,
+        signal,
+      )) {
         const obj = item as unknown as Record<string, unknown>;
-        if (obj['role'] === 'assistant' && typeof obj['content'] === 'string') {
-          lastAssistantContent = obj['content'];
+        if (obj["role"] === "assistant" && typeof obj["content"] === "string") {
+          lastAssistantContent = obj["content"];
         }
         yield item;
       }
       if (flashcardExtractor) {
-        flashcardExtractor.extract(message, lastAssistantContent).catch(console.error);
+        flashcardExtractor
+          .extract(message, lastAssistantContent)
+          .catch(console.error);
       }
+      const agent = createWeatherAgent();
+      yield* agent.runStream(message, signal);
+      mindmapService?.recompute().catch(console.error);
     },
     {
       staticDir: path.join(__dirname, "../dist/ui"),
       getHistory,
       getFlashcard,
       reviewFlashcard,
+      getMindmap: mindmapService ? () => mindmapService!.getGraph() : undefined,
     },
   );
 

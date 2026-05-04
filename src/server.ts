@@ -97,6 +97,10 @@ export function createAgentServer(
     res.sendStatus(204);
   });
 
+  app.options("/mindmap", (_req: Request, res: Response) => {
+    res.sendStatus(204);
+  });
+
   app.post("/chat", async (req: Request, res: Response) => {
     const message = (req.body as { message?: string }).message?.trim();
 
@@ -201,6 +205,20 @@ export function createAgentServer(
     try {
       const nextDueAt = await options.reviewFlashcard(id, score);
       res.json({ nextDueAt });
+    } catch (err) {
+      res
+        .status(500)
+        .json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  app.get("/mindmap", async (_req: Request, res: Response) => {
+    if (!options.getMindmap) {
+      res.status(404).json({ error: "Mindmap not configured" });
+      return;
+    }
+    try {
+      res.json(await options.getMindmap());
     } catch (err) {
       res
         .status(500)

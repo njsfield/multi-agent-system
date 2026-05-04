@@ -15,8 +15,9 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/chat":      "http://localhost:3000",
-      "/history":   "http://localhost:3000",
+      "/chat": "http://localhost:3000",
+      "/history": "http://localhost:3000",
+      "/mindmap": "http://localhost:3000",
       "/flashcard": "http://localhost:3000",
     },
   },

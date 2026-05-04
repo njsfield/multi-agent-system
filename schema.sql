@@ -53,4 +53,8 @@ CREATE TABLE flashcard_reviews (
   score        TEXT NOT NULL CHECK (score IN ('very_easy','easy','hard','fail')),
   sm2_quality  INT NOT NULL,
   reviewed_at  TIMESTAMPTZ DEFAULT now()
+CREATE TABLE mindmap_cache (
+  id         INT PRIMARY KEY DEFAULT 1,
+  graph      JSONB NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT now()
 );

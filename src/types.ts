@@ -1,4 +1,4 @@
-import type { FlashcardCard } from './flashcard-service';
+import type { FlashcardCard } from "./flashcard-service";
 
 export interface ToolCallRequest {
   toolName: string;
@@ -94,9 +94,28 @@ export interface HistoryMessage {
   createdAt: string;
 }
 
+export interface MindmapNode {
+  id: string;
+  type: "center" | "topic" | "fact";
+  data: { label: string; color?: string };
+}
+
+export interface MindmapEdge {
+  id: string;
+  source: string;
+  target: string;
+}
+
+export interface MindmapGraph {
+  nodes: MindmapNode[];
+  edges: MindmapEdge[];
+  updatedAt?: string;
+}
+
 export interface AgentServerOptions {
   staticDir?: string;
   getHistory?: (limit: number) => Promise<HistoryMessage[]>;
   getFlashcard?: () => Promise<FlashcardCard | null>;
   reviewFlashcard?: (id: number, score: string) => Promise<Date>;
+  getMindmap?: () => Promise<MindmapGraph>;
 }
