@@ -89,6 +89,14 @@ export function createAgentServer(
     res.sendStatus(204);
   });
 
+  app.options("/flashcard", (_req: Request, res: Response) => {
+    res.sendStatus(204);
+  });
+
+  app.options("/flashcard/:id/review", (_req: Request, res: Response) => {
+    res.sendStatus(204);
+  });
+
   app.post("/chat", async (req: Request, res: Response) => {
     const message = (req.body as { message?: string }).message?.trim();
 
@@ -152,6 +160,47 @@ export function createAgentServer(
     try {
       const messages = await options.getHistory(limit);
       res.json(messages);
+    } catch (err) {
+      res
+        .status(500)
+        .json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  app.get("/flashcard", async (_req: Request, res: Response) => {
+    if (!options.getFlashcard) {
+      res.status(404).json({ error: "Flashcard not configured" });
+      return;
+    }
+    try {
+      const card = await options.getFlashcard();
+      res.json(card ?? null);
+    } catch (err) {
+      res
+        .status(500)
+        .json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  app.post("/flashcard/:id/review", async (req: Request, res: Response) => {
+    if (!options.reviewFlashcard) {
+      res.status(404).json({ error: "Flashcard review not configured" });
+      return;
+    }
+    const id = parseInt(
+      String((req.params as Record<string, string>)["id"]),
+      10,
+    );
+    const score = (req.body as { score?: string }).score?.trim();
+    if (!score || !["very_easy", "easy", "hard", "fail"].includes(score)) {
+      res
+        .status(400)
+        .json({ error: "score must be one of: very_easy, easy, hard, fail" });
+      return;
+    }
+    try {
+      const nextDueAt = await options.reviewFlashcard(id, score);
+      res.json({ nextDueAt });
     } catch (err) {
       res
         .status(500)
