@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Flashcard Eval — 2026-05-04</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { font-size: 1.4rem; } h2 { font-size: 1.1rem; margin-top: 2rem; }
+    canvas { max-height: 280px; margin-bottom: 2rem; }
+    table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+    th, td { border: 1px solid #ddd; padding: 6px 10px; text-align: left; }
+    th { background: #f5f5f5; }
+  </style>
+</head>
+<body>
+  <h1>Flashcard Selection Eval — 2026-05-04</h1>
+  <p>5 scenarios · 3 judges</p>
+  <h2>Average Score by Scenario</h2>
+  <canvas id="chart1"></canvas>
+  <h2>Score per Judge by Scenario</h2>
+  <canvas id="chart2"></canvas>
+  <h2>Detail (hover score cells for justification)</h2>
+  <table>
+    <thead><tr>
+      <th>Scenario</th><th>Description</th><th>Selected ID</th><th>Avg</th>
+      <th>SelectionReasoningJudge</th><th>PriorityJudge</th><th>EdgeCaseJudge</th>
+    </tr></thead>
+    <tbody>
+    <tr>
+      <td>overdue-fail</td>
+      <td>Single card, 14 days overdue, last score = fail</td>
+      <td>1</td>
+      <td><strong>10.0</strong></td>
+      <td title="The agent clearly selected the only available card, which is 14 days overdue and has a last score of 'fail', indicating that it reasons effectively based on relevant factors such as overdue status and previous performance. This aligns with the expected behavior.">10</td><td title="The agent correctly selected the only available card that was overdue and had a previous fail score, aligning perfectly with the SM-2 priority rules.">10</td><td title="The agent correctly selected the only available card that was overdue and previously failed, which aligned with the expected behavior.">10</td>
+    </tr>
+    <tr>
+      <td>topic-variety</td>
+      <td>3 Geography cards + 1 History card, all equally due</td>
+      <td>null</td>
+      <td><strong>1.3</strong></td>
+      <td title="The agent failed to select any card, indicating a lack of reasoning and decision-making ability. It did not consider variety as a factor, despite having a clear option for diversifying the topics. Without a selected card, it does not demonstrate understanding of the importance of topic variety in spaced repetition.">2</td><td title="The agent selected no card (id: null) when a clearly better option (card id 5, History topic) was available to introduce topic variety. This is a failure to apply the selection rules correctly.">0</td><td title="The agent correctly handled the no-cards case by returning {'id': null} without hallucinating a card id. However, since there were available cards, scoring it low as the correct card id (5) was not selected.">2</td>
+    </tr>
+    <tr>
+      <td>no-cards</td>
+      <td>get_due_flashcards returns an empty array</td>
+      <td>null</td>
+      <td><strong>9.3</strong></td>
+      <td title="The agent appropriately recognized that there were no available cards to select by returning an ID of null. However, it did not provide any reasoning or explanation regarding its decision based on the factors such as daysOverdue or lastScore, which could help clarify its thought process.">8</td><td title="The agent correctly identified that there are no due flashcards available and returned an appropriate response with 'id' as null, adhering to the expected behavior.">10</td><td title="The agent correctly handled the no-cards case by returning {'id': null}, which aligns with the expected behavior for an empty array of available cards. There was no hallucination of a card id.">10</td>
+    </tr>
+    <tr>
+      <td>fail-vs-easy</td>
+      <td>Two equally overdue cards — one previously fail, one previously easy</td>
+      <td>6</td>
+      <td><strong>10.0</strong></td>
+      <td title="The agent chose card id 6 because it clearly identified that this card had a prior failure (lastScore='fail'), which typically indicates a greater need for review compared to the card with an easy prior score (id 7). Both cards were equally overdue with 3 days, but prioritizing the card that was previously challenging aligns with spaced repetition principles, as it focuses on areas needing improvement.">10</td><td title="The agent correctly selected card id 6, which had a last score of 'fail' and was overdue, prioritizing it over the card id 7 with a last score of 'easy'. This aligns perfectly with the SM-2 priority rules regarding assessment of previously failed and easier cards, making the selection optimal.">10</td><td title="The agent correctly selected card id 6, which has a 'fail' lastScore, over card id 7 with an 'easy' lastScore, demonstrating appropriate handling of the given scenario.">10</td>
+    </tr>
+    <tr>
+      <td>never-reviewed</td>
+      <td>One never-reviewed card available, no overdue cards</td>
+      <td>8</td>
+      <td><strong>10.0</strong></td>
+      <td title="The agent correctly prioritized the never-reviewed card, which aligns with the expected behavior of selecting such cards when no overdue options are present. It demonstrated clear reasoning by identifying that the only available card had not been previously reviewed, thus fulfilling the optimal selection criteria.">10</td><td title="The agent correctly selected the never-reviewed card (id 8) as expected, following the SM-2 priority rules since there were no overdue cards available.">10</td><td title="The agent correctly selected the available never-reviewed card id 8, fulfilling the requirement to prioritize never-reviewed cards when none are overdue.">10</td>
+    </tr></tbody>
+  </table>
+  <script>
+    const d = {"results":[{"scenarioId":"overdue-fail","scenarioDescription":"Single card, 14 days overdue, last score = fail","agentResponse":"{\"id\":1}","selectedCardId":1,"judgeScores":[{"judgeName":"SelectionReasoningJudge","score":10,"justification":"The agent clearly selected the only available card, which is 14 days overdue and has a last score of 'fail', indicating that it reasons effectively based on relevant factors such as overdue status and previous performance. This aligns with the expected behavior."},{"judgeName":"PriorityJudge","score":10,"justification":"The agent correctly selected the only available card that was overdue and had a previous fail score, aligning perfectly with the SM-2 priority rules."},{"judgeName":"EdgeCaseJudge","score":10,"justification":"The agent correctly selected the only available card that was overdue and previously failed, which aligned with the expected behavior."}],"averageScore":10},{"scenarioId":"topic-variety","scenarioDescription":"3 Geography cards + 1 History card, all equally due","agentResponse":"{\"id\":null}","selectedCardId":null,"judgeScores":[{"judgeName":"SelectionReasoningJudge","score":2,"justification":"The agent failed to select any card, indicating a lack of reasoning and decision-making ability. It did not consider variety as a factor, despite having a clear option for diversifying the topics. Without a selected card, it does not demonstrate understanding of the importance of topic variety in spaced repetition."},{"judgeName":"PriorityJudge","score":0,"justification":"The agent selected no card (id: null) when a clearly better option (card id 5, History topic) was available to introduce topic variety. This is a failure to apply the selection rules correctly."},{"judgeName":"EdgeCaseJudge","score":2,"justification":"The agent correctly handled the no-cards case by returning {'id': null} without hallucinating a card id. However, since there were available cards, scoring it low as the correct card id (5) was not selected."}],"averageScore":1.3333333333333333},{"scenarioId":"no-cards","scenarioDescription":"get_due_flashcards returns an empty array","agentResponse":"{\"id\":null}","selectedCardId":null,"judgeScores":[{"judgeName":"SelectionReasoningJudge","score":8,"justification":"The agent appropriately recognized that there were no available cards to select by returning an ID of null. However, it did not provide any reasoning or explanation regarding its decision based on the factors such as daysOverdue or lastScore, which could help clarify its thought process."},{"judgeName":"PriorityJudge","score":10,"justification":"The agent correctly identified that there are no due flashcards available and returned an appropriate response with 'id' as null, adhering to the expected behavior."},{"judgeName":"EdgeCaseJudge","score":10,"justification":"The agent correctly handled the no-cards case by returning {'id': null}, which aligns with the expected behavior for an empty array of available cards. There was no hallucination of a card id."}],"averageScore":9.333333333333334},{"scenarioId":"fail-vs-easy","scenarioDescription":"Two equally overdue cards — one previously fail, one previously easy","agentResponse":"{\"id\":6}","selectedCardId":6,"judgeScores":[{"judgeName":"SelectionReasoningJudge","score":10,"justification":"The agent chose card id 6 because it clearly identified that this card had a prior failure (lastScore='fail'), which typically indicates a greater need for review compared to the card with an easy prior score (id 7). Both cards were equally overdue with 3 days, but prioritizing the card that was previously challenging aligns with spaced repetition principles, as it focuses on areas needing improvement."},{"judgeName":"PriorityJudge","score":10,"justification":"The agent correctly selected card id 6, which had a last score of 'fail' and was overdue, prioritizing it over the card id 7 with a last score of 'easy'. This aligns perfectly with the SM-2 priority rules regarding assessment of previously failed and easier cards, making the selection optimal."},{"judgeName":"EdgeCaseJudge","score":10,"justification":"The agent correctly selected card id 6, which has a 'fail' lastScore, over card id 7 with an 'easy' lastScore, demonstrating appropriate handling of the given scenario."}],"averageScore":10},{"scenarioId":"never-reviewed","scenarioDescription":"One never-reviewed card available, no overdue cards","agentResponse":"{\"id\": 8}","selectedCardId":8,"judgeScores":[{"judgeName":"SelectionReasoningJudge","score":10,"justification":"The agent correctly prioritized the never-reviewed card, which aligns with the expected behavior of selecting such cards when no overdue options are present. It demonstrated clear reasoning by identifying that the only available card had not been previously reviewed, thus fulfilling the optimal selection criteria."},{"judgeName":"PriorityJudge","score":10,"justification":"The agent correctly selected the never-reviewed card (id 8) as expected, following the SM-2 priority rules since there were no overdue cards available."},{"judgeName":"EdgeCaseJudge","score":10,"justification":"The agent correctly selected the available never-reviewed card id 8, fulfilling the requirement to prioritize never-reviewed cards when none are overdue."}],"averageScore":10}],"judgeNames":["SelectionReasoningJudge","PriorityJudge","EdgeCaseJudge"]};
+    const colors = ['#3b82f6','#22c55e','#f97316','#a855f7','#06b6d4'];
+    new Chart(document.getElementById('chart1'), {
+      type: 'bar',
+      data: {
+        labels: d.results.map(r => r.scenarioId),
+        datasets: [{ label: 'Avg Score', data: d.results.map(r => r.averageScore), backgroundColor: '#3b82f6' }],
+      },
+      options: { scales: { y: { min: 0, max: 10 } } },
+    });
+    new Chart(document.getElementById('chart2'), {
+      type: 'bar',
+      data: {
+        labels: d.results.map(r => r.scenarioId),
+        datasets: d.judgeNames.map((name, i) => ({
+          label: name,
+          data: d.results.map(r => r.judgeScores[i].score),
+          backgroundColor: colors[i % colors.length],
+        })),
+      },
+      options: { scales: { y: { min: 0, max: 10 } } },
+    });
+  </script>
+</body>
+</html>
