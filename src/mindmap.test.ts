@@ -90,5 +90,26 @@ describe('MindmapService', () => {
 
       await expect(service.recompute()).resolves.not.toThrow();
     });
+
+    describe('cosineDist edge cases (via recompute with mismatched embeddings)', () => {
+      it('handles mismatched vector dimensions gracefully without throwing', async () => {
+        // Mix of 4-dim and 3-dim embeddings - should not throw
+        const query = vi.fn()
+          .mockResolvedValueOnce({
+            rows: [
+              { id: 1, content: 'a', embedding: JSON.stringify([0.1, 0.2, 0.3, 0.4]) },
+              { id: 2, content: 'b', embedding: JSON.stringify([0.5, 0.6, 0.7]) }, // mismatched
+              { id: 3, content: 'c', embedding: JSON.stringify([0.1, 0.2, 0.3, 0.4]) },
+              { id: 4, content: 'd', embedding: JSON.stringify([0.5, 0.6, 0.7, 0.8]) },
+              { id: 5, content: 'e', embedding: JSON.stringify([0.1, 0.2, 0.3, 0.4]) },
+              { id: 6, content: 'f', embedding: JSON.stringify([0.5, 0.6, 0.7, 0.8]) },
+            ],
+          })
+          .mockResolvedValue({ rows: [] });
+        const service = new MindmapService(makePool(query), makeOpenAI());
+
+        await expect(service.recompute()).resolves.not.toThrow();
+      });
+    });
   });
 });

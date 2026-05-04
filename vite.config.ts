@@ -17,6 +17,7 @@ export default defineConfig({
     proxy: {
       "/chat": "http://localhost:3000",
       "/history": "http://localhost:3000",
+      "/mindmap": "http://localhost:3000",
     },
   },
 });

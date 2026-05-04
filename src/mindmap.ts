@@ -9,6 +9,7 @@ const TOPIC_COLORS = [
 ];
 
 function cosineDist(a: number[], b: number[]): number {
+  if (a.length !== b.length) return 1;
   let dot = 0, normA = 0, normB = 0;
   for (let i = 0; i < a.length; i++) {
     dot   += a[i]! * b[i]!;
@@ -118,7 +119,9 @@ export class MindmapService {
       const parsed = JSON.parse(raw) as { topic?: string; facts?: string[] };
       return {
         topic: typeof parsed.topic === 'string' ? parsed.topic : fallback.topic,
-        facts: Array.isArray(parsed.facts) ? parsed.facts.slice(0, 3) : [],
+        facts: Array.isArray(parsed.facts)
+          ? parsed.facts.filter((f): f is string => typeof f === 'string').slice(0, 3)
+          : [],
       };
     } catch {
       return fallback;
