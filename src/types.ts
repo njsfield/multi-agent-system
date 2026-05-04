@@ -1,3 +1,5 @@
+import type { FlashcardCard } from './flashcard-service';
+
 export interface ToolCallRequest {
   toolName: string;
   parameters: Record<string, unknown>;
@@ -95,4 +97,6 @@ export interface HistoryMessage {
 export interface AgentServerOptions {
   staticDir?: string;
   getHistory?: (limit: number) => Promise<HistoryMessage[]>;
+  getFlashcard?: () => Promise<FlashcardCard | null>;
+  reviewFlashcard?: (id: number, score: string) => Promise<Date>;
 }

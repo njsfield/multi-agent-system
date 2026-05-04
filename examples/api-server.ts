@@ -9,6 +9,10 @@ import { PgVectorMemory, createPgPool } from "../src/pg-memory";
 import { ListMemory } from "../src/memory";
 import type { BaseMemory } from "../src/memory";
 import type { HistoryMessage } from "../src/types";
+import { FlashcardService } from "../src/flashcard-service";
+import { FlashcardExtractor } from "../src/flashcard-extractor";
+import { createFlashcardSelectionAgent } from "../src/flashcard-agent";
+import type { FlashcardCard } from "../src/flashcard-service";
 
 config({ path: path.join(__dirname, "../.env") });
 
@@ -232,6 +236,9 @@ const PORT = 3000;
   // Attempt postgres connection; fall back to in-memory if unavailable
   let agentMemory: BaseMemory;
   let getHistory: ((limit: number) => Promise<HistoryMessage[]>) | undefined;
+  let getFlashcard: (() => Promise<FlashcardCard | null>) | undefined;
+  let reviewFlashcard: ((id: number, score: string) => Promise<Date>) | undefined;
+  let flashcardExtractor: FlashcardExtractor | undefined;
 
   const DATABASE_URL =
     process.env["DATABASE_URL"] ?? "postgresql://localhost/tsagent";
@@ -243,6 +250,28 @@ const PORT = 3000;
     const pgMemory = new PgVectorMemory(pool, openaiClient);
     agentMemory = pgMemory;
     getHistory = (limit) => pgMemory.getHistory(limit);
+
+    const flashcardService = new FlashcardService(pool);
+    const flashcardAgent = createFlashcardSelectionAgent(pool);
+    flashcardExtractor = new FlashcardExtractor(pool, openaiClient);
+
+    getFlashcard = async () => {
+      const response = await flashcardAgent.run('Select a flashcard for review.');
+      const lastMsg = response.messages.at(-1);
+      if (!lastMsg) return null;
+      try {
+        const parsed = JSON.parse(lastMsg.content) as { id?: number | null };
+        if (!parsed.id) return null;
+        return flashcardService.getById(parsed.id);
+      } catch {
+        const match = lastMsg.content.match(/"id"\s*:\s*(\d+)/);
+        if (!match) return null;
+        return flashcardService.getById(parseInt(match[1]!, 10));
+      }
+    };
+
+    reviewFlashcard = (id: number, score: string) => flashcardService.applyReview(id, score);
+
     console.log("[startup] postgres memory: connected");
   } catch (err) {
     console.warn(
@@ -269,13 +298,24 @@ chance of rain, and any notable hourly highlights. Be friendly and concise.`,
   }
 
   const app = createAgentServer(
-    (message, signal) => {
-      const agent = createWeatherAgent();
-      return agent.runStream(message, signal);
+    async function* (message, signal) {
+      let lastAssistantContent = '';
+      for await (const item of createWeatherAgent().runStream(message, signal)) {
+        const obj = item as unknown as Record<string, unknown>;
+        if (obj['role'] === 'assistant' && typeof obj['content'] === 'string') {
+          lastAssistantContent = obj['content'];
+        }
+        yield item;
+      }
+      if (flashcardExtractor) {
+        flashcardExtractor.extract(message, lastAssistantContent).catch(console.error);
+      }
     },
     {
       staticDir: path.join(__dirname, "../dist/ui"),
       getHistory,
+      getFlashcard,
+      reviewFlashcard,
     },
   );
 
