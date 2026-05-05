@@ -66,14 +66,10 @@ graph TD
     P --> Q["Deduplicate &<br/>Find Topic"]
     Q --> R["Store flashcard<br/>with topic_id FK"]
     
-    E -->|In Background| S["Recompute Mindmap"]
-    S --> T["Query messages<br/>grouped by topic_id"]
-    T --> U["For each topic:<br/>extract facts"]
-    U --> V["Build graph nodes<br/>& edges"]
-    V --> W["Cache in mindmap_cache"]
-    
     F --> X["Response Complete"]
-    X --> Y["Frontend now shows:<br/>chat, flashcards, mindmap"]
+    X --> Y["Frontend now shows:<br/>chat, flashcards"]
+    Y --> Z["GET /mindmap generates<br/>fresh graph from DB"]
+    Z --> AA["Frontend displays<br/>mindmap with topics<br/>and facts"]
 ```
 
 ## Prerequisites
@@ -359,10 +355,7 @@ vite.config.ts            # Vite bundler config
 - `sm2_quality` (INT): Quality score used in SM-2
 - `reviewed_at` (TIMESTAMPTZ)
 
-**mindmap_cache**
-- `id` (INT PRIMARY KEY, default=1): Single-row cache
-- `graph` (JSONB): Cached React Flow graph
-- `updated_at` (TIMESTAMPTZ)
+(Note: mindmap_cache table removed - mindmap is generated at runtime from messages and topics tables)
 
 ## Key Concepts
 

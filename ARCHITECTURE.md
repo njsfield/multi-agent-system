@@ -90,7 +90,7 @@ sequenceDiagram
             Agent->>Services: mindmapService.recompute()
             Services->>Database: Query all messages by topic
             Services->>OpenAI: label clusters
-            Services->>Database: UPDATE mindmap_cache
+            Services->>Database: Query messages by topic_id
             
             Agent->>Services: topicDeterminer.determine()
             Services->>OpenAI: classify message topic
@@ -128,11 +128,11 @@ graph LR
     C -->|bg task| O["13. Recompute<br/>Mindmap"]
     O --> P["14. Query messages<br/>by topic_id"]
     P --> Q["15. Build graph<br/>Nodes & Edges"]
-    Q --> R["16. Cache in<br/>mindmap_cache"]
+    Q --> R["16. Return fresh<br/>graph to frontend"]
     
     H --> S["Final State:<br/>Message + Topic<br/>+ Embedding"]
     N --> T["Flashcard<br/>Ready for<br/>Review"]
-    R --> U["Mindmap<br/>Updated"]
+    R --> U["Mindmap<br/>Displayed"]
 ```
 
 ## Component Details
@@ -202,23 +202,24 @@ graph TD
 
 ```mermaid
 graph TD
-    A["Recompute Called"] --> B["Query all messages<br/>grouped by topic_id"]
+    A["GET /mindmap<br/>request arrives"] --> B["Query messages<br/>grouped by topic_id"]
     B --> C["For each topic<br/>with messages:"]
-    C --> D["Get top 3 recent<br/>messages"]
-    D --> E["Extract facts<br/>from each<br/>using LLM"]
+    C --> D["Get up to 3 recent<br/>messages"]
+    D --> E["Extract facts<br/>from messages<br/>using LLM"]
     E --> F["Build React Flow<br/>Graph"]
     F -->|center node| G["All Topics"]
-    F -->|topic nodes| H["One per topic<br/>with count"]
+    F -->|topic nodes| H["One per topic<br/>with message count"]
     F -->|fact nodes| I["Up to 3 facts<br/>per topic"]
-    G --> J["Cache to<br/>mindmap_cache<br/>as JSON"]
+    I --> J["Return graph with<br/>current timestamp"]
 ```
 
 **Current**: `src/mindmap.ts`
 
-**Changes Required**:
-- Replace k-means clustering with GROUP BY topic_id
-- Simplify label generation (use topic_label from topics table)
-- Add subtopic rendering to nodes
+**Design Decision**: 
+- No caching - generate at runtime from messages/topics tables
+- Replaced k-means clustering with simple `GROUP BY topic_id`
+- Each GET /mindmap call generates fresh data
+- Simpler schema, always up-to-date results
 
 ### Flashcard Service (SM-2 Algorithm)
 
@@ -252,7 +253,7 @@ Message → Store in DB → Topic Determiner (LLM) → topic_id FK → Flashcard
                         ↓
                      Update messages table
                         ↓
-                   Mindmap Service queries by topic_id → Cache
+             Mindmap Service queries by topic_id (at runtime)
 ```
 
 ## Database Changes
