@@ -1,6 +1,7 @@
 import pg from 'pg';
 import OpenAI from 'openai';
 import { BaseMemory } from './memory';
+import { determineMessageTopic } from './topic-determination-agent';
 import type { HistoryMessage } from './types';
 
 function isMarkdown(text: string): boolean {
@@ -38,6 +39,20 @@ export class PgVectorMemory extends BaseMemory {
       [role, content, source],
     );
     const messageId = rows[0]!.id;
+
+    // Determine topic asynchronously (fire-and-forget, don't block message storage)
+    determineMessageTopic(content, this.pool)
+      .then(assignment => {
+        if (assignment) {
+          return this.pool.query(
+            'UPDATE messages SET topic_id = $1, subtopic = $2 WHERE id = $3',
+            [assignment.topicId, assignment.subtopic, messageId],
+          );
+        }
+      })
+      .catch(err => {
+        console.error('[PgVectorMemory] Topic determination failed:', err);
+      });
 
     try {
       const res = await this.openai.embeddings.create({

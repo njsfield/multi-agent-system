@@ -5,8 +5,8 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "vite build && tsc --noEmit",
-    "dev": "concurrently -n ui,api -c cyan,green \"vite\" \"ts-node examples/api-server.ts\"",
-    "start": "ts-node examples/api-server.ts",
+    "dev": "concurrently -n ui,api -c cyan,green \"vite\" \"ts-node src/start-server.ts\"",
+    "start": "ts-node src/start-server.ts",
     "lint": "eslint src/ui",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
