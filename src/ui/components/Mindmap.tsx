@@ -69,7 +69,26 @@ function FactNode({ data }: NodeProps) {
   );
 }
 
-const nodeTypes = { center: CenterNode, topic: TopicNode, fact: FactNode };
+function SubtopicNode({ data }: NodeProps) {
+  return (
+    <div
+      style={{
+        padding: "5px 12px",
+        borderRadius: 14,
+        whiteSpace: "nowrap",
+        background: "#1f2937",
+        border: "1px solid #4b5563",
+        color: "#d1d5db",
+        fontSize: 11,
+        fontWeight: 500,
+      }}
+    >
+      {data.label}
+    </div>
+  );
+}
+
+const nodeTypes = { center: CenterNode, topic: TopicNode, fact: FactNode, subtopic: SubtopicNode };
 
 // ---------------------------------------------------------------------------
 // Position computation
@@ -82,13 +101,20 @@ function buildFlowGraph(graph: MindmapGraph): { nodes: Node[]; edges: Edge[] } {
     graph.nodes.map((n) => [n.id, n]),
   );
 
-  // Map topic id → its fact ids (from edges)
-  const topicFacts = new Map<string, string[]>();
+  // Map topic id → its child ids (subtopics or facts)
+  const topicChildren = new Map<string, string[]>();
+  const subtopicFacts = new Map<string, string[]>();
+
   for (const edge of graph.edges) {
-    if (nodeMap.get(edge.source)?.type === "topic") {
-      const arr = topicFacts.get(edge.source) ?? [];
+    const sourceNode = nodeMap.get(edge.source);
+    if (sourceNode?.type === "topic") {
+      const arr = topicChildren.get(edge.source) ?? [];
       arr.push(edge.target);
-      topicFacts.set(edge.source, arr);
+      topicChildren.set(edge.source, arr);
+    } else if (sourceNode?.type === "subtopic") {
+      const arr = subtopicFacts.get(edge.source) ?? [];
+      arr.push(edge.target);
+      subtopicFacts.set(edge.source, arr);
     }
   }
 
@@ -108,7 +134,7 @@ function buildFlowGraph(graph: MindmapGraph): { nodes: Node[]; edges: Edge[] } {
     });
   }
 
-  // Topic nodes on a circle, facts fanned around each topic
+  // Topic nodes on a circle, subtopics/facts fanned around each topic
   topics.forEach((topic, i) => {
     const angle = (2 * Math.PI * i) / topics.length - Math.PI / 2;
     const tx = CX + 280 * Math.cos(angle);
@@ -120,33 +146,59 @@ function buildFlowGraph(graph: MindmapGraph): { nodes: Node[]; edges: Edge[] } {
       data: topic.data,
     });
 
-    const factIds = topicFacts.get(topic.id) ?? [];
-    factIds.forEach((factId, fi) => {
-      const fact = nodeMap.get(factId);
-      if (!fact) return;
-      const factAngle = angle + (fi - (factIds.length - 1) / 2) * 0.35;
-      const fx = tx + 185 * Math.cos(factAngle);
-      const fy = ty + 185 * Math.sin(factAngle);
+    const childIds = topicChildren.get(topic.id) ?? [];
+    childIds.forEach((childId, ci) => {
+      const child = nodeMap.get(childId);
+      if (!child) return;
+
+      const childAngle = angle + (ci - (childIds.length - 1) / 2) * 0.35;
+      const cx = tx + 185 * Math.cos(childAngle);
+      const cy = ty + 185 * Math.sin(childAngle);
+
       rfNodes.push({
-        id: factId,
-        type: "fact",
-        position: { x: fx - 60, y: fy - 14 },
-        data: fact.data,
+        id: childId,
+        type: child.type,
+        position: { x: cx - 60, y: cy - 14 },
+        data: child.data,
       });
+
+      // If this is a subtopic, fan facts around it
+      if (child.type === "subtopic") {
+        const factIds = subtopicFacts.get(childId) ?? [];
+        factIds.forEach((factId, fi) => {
+          const fact = nodeMap.get(factId);
+          if (!fact) return;
+
+          const factAngle = childAngle + (fi - (factIds.length - 1) / 2) * 0.25;
+          const fx = cx + 120 * Math.cos(factAngle);
+          const fy = cy + 120 * Math.sin(factAngle);
+
+          rfNodes.push({
+            id: factId,
+            type: "fact",
+            position: { x: fx - 40, y: fy - 12 },
+            data: fact.data,
+          });
+        });
+      }
     });
   });
 
-  // Edges
+  // Edges with styling
   for (const edge of graph.edges) {
     const sourceNode = nodeMap.get(edge.source);
-    const isTopicEdge = sourceNode?.type === "center";
     const targetNode = nodeMap.get(edge.target);
+    const isTopicEdge = sourceNode?.type === "center";
+    const isSubtopicEdge = sourceNode?.type === "subtopic";
+
     rfEdges.push({
       id: edge.id,
       source: edge.source,
       target: edge.target,
       style: isTopicEdge
         ? { stroke: targetNode?.data.color ?? "#6366f1", strokeWidth: 2 }
+        : isSubtopicEdge
+        ? { stroke: "#555765", strokeWidth: 1, strokeDasharray: "2,2" }
         : { stroke: "#374151", strokeWidth: 1, strokeDasharray: "4,4" },
     });
   }

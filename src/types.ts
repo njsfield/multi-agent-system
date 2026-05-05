@@ -98,7 +98,7 @@ export interface HistoryMessage {
 
 export interface MindmapNode {
   id: string;
-  type: "center" | "topic" | "fact";
+  type: "center" | "topic" | "subtopic" | "fact";
   data: { label: string; color?: string };
 }
 

@@ -1,23 +1,16 @@
--- Connect to postgres to set up the DB and User
--- (If these already exist from your last run, it might show errors, which is fine)
-CREATE USER admin WITH PASSWORD 'postgres';
-CREATE DATABASE tsagent OWNER admin;
+-- ============================================================================
+-- TS-Agent Database Schema
+-- ============================================================================
+-- Note: Run this as the 'admin' user on the 'tsagent' database
+-- First-time setup: see QUICKSTART.md for full instructions
+-- ============================================================================
 
--- 1. Connect to the new database as SUPERUSER (postgres)
-\c tsagent postgres
-
--- 2. Enable the extension as superuser
-CREATE EXTENSION IF NOT EXISTS vector;
-
--- 3. Now switch to admin for the tables
-\c tsagent admin
-
-CREATE TABLE topics (
+CREATE TABLE IF NOT EXISTS topics (
   id    BIGSERIAL PRIMARY KEY,
   label TEXT UNIQUE NOT NULL
 );
 
-CREATE TABLE messages (
+CREATE TABLE IF NOT EXISTS messages (
   id         BIGSERIAL PRIMARY KEY,
   role       TEXT NOT NULL,
   content    TEXT NOT NULL,
@@ -27,7 +20,7 @@ CREATE TABLE messages (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE TABLE message_embeddings (
+CREATE TABLE IF NOT EXISTS message_embeddings (
   id         BIGSERIAL PRIMARY KEY,
   message_id BIGINT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
   content    TEXT NOT NULL,
@@ -35,9 +28,10 @@ CREATE TABLE message_embeddings (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE INDEX ON message_embeddings USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX IF NOT EXISTS idx_message_embeddings_embedding
+  ON message_embeddings USING hnsw (embedding vector_cosine_ops);
 
-CREATE TABLE flashcards (
+CREATE TABLE IF NOT EXISTS flashcards (
   id                BIGSERIAL PRIMARY KEY,
   question          TEXT NOT NULL,
   answer            TEXT NOT NULL,
@@ -52,9 +46,10 @@ CREATE TABLE flashcards (
   created_at        TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE INDEX ON flashcards USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX IF NOT EXISTS idx_flashcards_embedding
+  ON flashcards USING hnsw (embedding vector_cosine_ops);
 
-CREATE TABLE flashcard_reviews (
+CREATE TABLE IF NOT EXISTS flashcard_reviews (
   id           BIGSERIAL PRIMARY KEY,
   flashcard_id BIGINT NOT NULL REFERENCES flashcards(id) ON DELETE CASCADE,
   score        TEXT NOT NULL CHECK (score IN ('very_easy','easy','hard','fail')),

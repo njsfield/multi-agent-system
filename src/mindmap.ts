@@ -56,21 +56,52 @@ export class MindmapService {
         target: topicNodeId,
       });
 
-      // Get recent messages for this topic to extract facts
-      const { rows: messages } = await this.pool.query<{ content: string }>(
-        `SELECT content FROM messages
-         WHERE topic_id = $1
-         ORDER BY id DESC
-         LIMIT 3`,
+      // Get subtopics for this topic from messages
+      const { rows: subtopics } = await this.pool.query<{
+        subtopic: string;
+        message_count: number;
+      }>(
+        `SELECT subtopic, COUNT(*) as message_count
+         FROM messages
+         WHERE topic_id = $1 AND subtopic IS NOT NULL
+         GROUP BY subtopic
+         ORDER BY COUNT(*) DESC
+         LIMIT 5`,
         [topic.topic_id],
       );
 
-      const facts = await this._extractFacts(messages.map(m => m.content));
-      facts.forEach((fact, fi) => {
-        const factId = `fact-${topic.topic_id}-${fi}`;
-        nodes.push({ id: factId, type: 'fact', data: { label: fact } });
-        edges.push({ id: `e-${topic.topic_id}-f${fi}`, source: topicNodeId, target: factId });
+      // Add subtopic nodes
+      subtopics.forEach((sub, si) => {
+        const subtopicNodeId = `subtopic-${topic.topic_id}-${si}`;
+        nodes.push({
+          id: subtopicNodeId,
+          type: 'fact', // Reuse fact styling for subtopics
+          data: { label: sub.subtopic },
+        });
+        edges.push({
+          id: `e-${topic.topic_id}-s${si}`,
+          source: topicNodeId,
+          target: subtopicNodeId,
+        });
       });
+
+      // If no subtopics, extract and show facts instead
+      if (subtopics.length === 0) {
+        const { rows: messages } = await this.pool.query<{ content: string }>(
+          `SELECT content FROM messages
+           WHERE topic_id = $1
+           ORDER BY id DESC
+           LIMIT 3`,
+          [topic.topic_id],
+        );
+
+        const facts = await this._extractFacts(messages.map(m => m.content));
+        facts.forEach((fact, fi) => {
+          const factId = `fact-${topic.topic_id}-${fi}`;
+          nodes.push({ id: factId, type: 'fact', data: { label: fact } });
+          edges.push({ id: `e-${topic.topic_id}-f${fi}`, source: topicNodeId, target: factId });
+        });
+      }
     }
 
     return { nodes, edges, updatedAt: new Date().toISOString() };

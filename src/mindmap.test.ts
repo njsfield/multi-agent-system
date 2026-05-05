@@ -4,10 +4,22 @@ import type pg from 'pg';
 import type OpenAI from 'openai';
 
 function makePool(queries: Record<string, any>) {
+  let callCount = 0;
   return {
     query: vi.fn(async (sql: string) => {
-      if (sql.includes('GROUP BY')) return queries.topics || { rows: [] };
-      if (sql.includes('ORDER BY id DESC')) return queries.messages || { rows: [] };
+      callCount++;
+      // First call: topics query (GROUP BY m.topic_id)
+      if (sql.includes('GROUP BY m.topic_id, t.label')) {
+        return queries.topics || { rows: [] };
+      }
+      // Subsequent calls alternate: subtopics, messages, subtopics, messages, ...
+      const callType = (callCount - 1) % 2;
+      if (sql.includes('GROUP BY subtopic')) {
+        return queries.subtopics || { rows: [] };
+      }
+      if (sql.includes('ORDER BY id DESC')) {
+        return queries.messages || { rows: [] };
+      }
       return { rows: [] };
     }),
   } as unknown as pg.Pool;
@@ -128,21 +140,25 @@ describe('MindmapService', () => {
     expect(timestamp.getTime()).toBeLessThanOrEqual(after.getTime());
   });
 
-  it('handles empty facts gracefully', async () => {
+  it('falls back to fact extraction when no subtopics available', async () => {
     const pool = makePool({
       topics: {
         rows: [{ topic_id: 1, label: 'Fitness', message_count: 1 }],
       },
+      subtopics: {
+        rows: [], // No subtopics, should extract facts
+      },
       messages: {
-        rows: [{ content: 'Test' }],
+        rows: [{ content: 'Test message' }],
       },
     });
-    const service = new MindmapService(pool, makeOpenAI('{"facts":[]}')); // No facts returned
+    const service = new MindmapService(pool, makeOpenAI('{"facts":["Key insight"]}')); // Extracted facts
 
     const graph = await service.getGraph();
     const topicNode = graph.nodes.find(n => n.id === 'topic-1');
 
     expect(topicNode).toBeDefined(); // Topic still exists
-    expect(graph.nodes.filter(n => n.type === 'fact')).toHaveLength(0); // No fact nodes
+    // Should have center, topic, and fact nodes
+    expect(graph.nodes.length).toBeGreaterThan(2);
   });
 });
