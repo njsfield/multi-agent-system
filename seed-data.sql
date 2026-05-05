@@ -1,4 +1,16 @@
--- Seed data for 40 common topics across 3 categories
+-- ============================================================================
+-- Seed data for TS-Agent system
+-- ============================================================================
+-- This script populates:
+-- - 40 pre-defined topics across 3 categories (Fitness, Finance, Food)
+-- - 6 sample messages with pre-assigned topics and subtopics
+--
+-- Load with: psql -U admin -d tsagent -f seed-data.sql
+-- Or via Docker: docker exec -i tsagent-db psql -U admin -d tsagent < seed-data.sql
+--
+-- Note: Embeddings are generated automatically when messages are added through
+-- the API. This seed data focuses on topics and message content.
+-- ============================================================================
 
 \c tsagent admin
 
@@ -98,14 +110,50 @@ INSERT INTO messages (role, content, source, topic_id, subtopic) VALUES
    'efficient cooking methods for busy schedules');
 
 -- ============================================================================
--- Verify data was inserted
+-- Verification queries
 -- ============================================================================
 
-SELECT 'Topics created:' AS status;
+SELECT '=== TOPICS ===' AS verification;
 SELECT COUNT(*) as total_topics FROM topics;
-SELECT label FROM topics ORDER BY label;
 
-SELECT '' AS blank;
-SELECT 'Sample messages created:' AS status;
+SELECT '' AS separator;
+SELECT 'Topics by category:' AS info;
+SELECT
+  CASE
+    WHEN label IN ('Fitness', 'Cardio Training', 'Strength Training', 'Flexibility & Stretching', 'Yoga', 'Pilates', 'Meditation', 'Sleep & Recovery', 'Nutrition', 'Hydration', 'Injury Prevention', 'Athletic Performance', 'Personal Training') THEN 'Fitness'
+    WHEN label IN ('Finance', 'Budgeting', 'Saving & Emergency Fund', 'Investing', 'Stock Market', 'Cryptocurrency', 'Real Estate', 'Debt Management', 'Credit & Credit Score', 'Taxes', 'Retirement Planning', 'Insurance', 'Side Income & Freelance', 'Career Growth') THEN 'Finance'
+    WHEN label IN ('Food', 'Recipes', 'Cooking Techniques', 'Baking', 'Cuisine Styles', 'Meal Planning', 'Food Safety', 'Dietary Approaches', 'Restaurants & Dining', 'Ingredients & Substitutions', 'Food Pairing & Wine', 'Kitchen Equipment', 'Food Trends') THEN 'Food'
+    ELSE 'Other'
+  END AS category,
+  COUNT(*) as count
+FROM topics
+GROUP BY category
+ORDER BY category;
+
+SELECT '' AS separator;
+SELECT '=== SAMPLE MESSAGES ===' AS verification;
 SELECT COUNT(*) as total_messages FROM messages;
-SELECT role, topic_id, subtopic, LEFT(content, 50) || '...' as preview FROM messages;
+
+SELECT '' AS separator;
+SELECT 'Messages by topic:' AS info;
+SELECT t.label, COUNT(m.id) as message_count
+FROM messages m
+LEFT JOIN topics t ON m.topic_id = t.id
+GROUP BY t.id, t.label
+ORDER BY t.label;
+
+SELECT '' AS separator;
+SELECT 'Message details:' AS info;
+SELECT
+  m.id,
+  m.role,
+  t.label as topic,
+  m.subtopic,
+  LENGTH(m.content) as content_length,
+  LEFT(m.content, 40) || '...' as preview
+FROM messages m
+LEFT JOIN topics t ON m.topic_id = t.id
+ORDER BY m.id;
+
+SELECT '' AS separator;
+SELECT 'Seed data successfully loaded! ✓' AS status;
