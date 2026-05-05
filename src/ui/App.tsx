@@ -54,6 +54,15 @@ export function App() {
 
       <div className="flex-1 overflow-y-auto px-4 py-6">
         <div className="mx-auto flex max-w-3xl flex-col gap-5">
+          {messages.length === 0 && (
+            <p className="text-center text-sm text-muted-foreground">
+              Ask the weather agent anything…
+            </p>
+          )}
+
+          {messages.map((msg) => (
+            <Message key={msg.id} {...msg} />
+          ))}
           {card && (
             <FlashcardWidget
               card={card}
@@ -62,14 +71,6 @@ export function App() {
               onScore={submitScore}
             />
           )}
-          {messages.length === 0 && (
-            <p className="text-center text-sm text-muted-foreground">
-              Ask the weather agent anything…
-            </p>
-          )}
-          {messages.map((msg) => (
-            <Message key={msg.id} {...msg} />
-          ))}
           <div ref={bottomRef} />
         </div>
       </div>

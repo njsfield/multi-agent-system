@@ -9,6 +9,7 @@ export interface Sm2State {
 export interface DueCard {
   id: number;
   question: string;
+  topicId: number | null;
   topicLabel: string | null;
   lastScore: string | null;
   daysOverdue: number;
@@ -18,6 +19,7 @@ export interface FlashcardCard {
   id: number;
   question: string;
   answer: string;
+  topicId: number | null;
   topicLabel: string | null;
 }
 
@@ -57,13 +59,15 @@ export class FlashcardService {
     const { rows } = await this.pool.query<{
       id: number;
       question: string;
+      topic_id: number | null;
       topic_label: string | null;
       last_score: string | null;
       next_due_at: string;
     }>(
-      `SELECT f.id, f.question, f.topic_label, f.next_due_at,
+      `SELECT f.id, f.question, f.topic_id, t.label AS topic_label, f.next_due_at,
               r.score AS last_score
        FROM flashcards f
+       LEFT JOIN topics t ON f.topic_id = t.id
        LEFT JOIN LATERAL (
          SELECT score FROM flashcard_reviews
          WHERE flashcard_id = f.id
@@ -79,6 +83,7 @@ export class FlashcardService {
     return rows.map(r => ({
       id: r.id,
       question: r.question,
+      topicId: r.topic_id,
       topicLabel: r.topic_label,
       lastScore: r.last_score,
       daysOverdue: Math.max(
@@ -137,14 +142,16 @@ export class FlashcardService {
       id: number;
       question: string;
       answer: string;
+      topic_id: number | null;
       topic_label: string | null;
-    }>('SELECT id, question, answer, topic_label FROM flashcards WHERE id = $1', [id]);
+    }>('SELECT f.id, f.question, f.answer, f.topic_id, t.label AS topic_label FROM flashcards f LEFT JOIN topics t ON f.topic_id = t.id WHERE f.id = $1', [id]);
 
     if (!rows[0]) return null;
     return {
       id: rows[0].id,
       question: rows[0].question,
       answer: rows[0].answer,
+      topicId: rows[0].topic_id,
       topicLabel: rows[0].topic_label,
     };
   }

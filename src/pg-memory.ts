@@ -89,9 +89,11 @@ export class PgVectorMemory extends BaseMemory {
       role: string;
       content: string;
       source: string;
+      topic_id: number | null;
+      subtopic: string | null;
       created_at: string;
     }>(
-      'SELECT id, role, content, source, created_at FROM messages ORDER BY id ASC LIMIT $1',
+      'SELECT id, role, content, source, topic_id, subtopic, created_at FROM messages ORDER BY id ASC LIMIT $1',
       [limit],
     );
     return rows.map(r => ({
@@ -99,6 +101,8 @@ export class PgVectorMemory extends BaseMemory {
       role:        r.role as 'user' | 'assistant',
       content:     r.content,
       source:      r.source,
+      topicId:     r.topic_id,
+      subtopic:    r.subtopic,
       contentType: isMarkdown(r.content) ? 'markdown' : 'text',
       createdAt:   r.created_at,
     }));

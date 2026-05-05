@@ -22,7 +22,7 @@ export class FlashcardExtractor {
     private openai: OpenAI,
   ) {}
 
-  async extract(userMessage: string, assistantMessage: string): Promise<void> {
+  async extract(userMessage: string, assistantMessage: string, topicId?: number | null): Promise<void> {
     if (!assistantMessage.trim()) return;
 
     const extracted = await this.extractQA(userMessage, assistantMessage);
@@ -36,12 +36,10 @@ export class FlashcardExtractor {
 
     if (await this.isDuplicate(extracted.question, embedding)) return;
 
-    const topicLabel = await this.findClosestTopic(embedding);
-
     await this.pool.query(
-      `INSERT INTO flashcards (question, answer, topic_label, embedding)
+      `INSERT INTO flashcards (question, answer, topic_id, embedding)
        VALUES ($1, $2, $3, $4)`,
-      [extracted.question, extracted.answer, topicLabel, JSON.stringify(embedding)],
+      [extracted.question, extracted.answer, topicId ?? null, JSON.stringify(embedding)],
     );
   }
 
@@ -88,31 +86,4 @@ export class FlashcardExtractor {
     }
   }
 
-  private async findClosestTopic(embedding: number[]): Promise<string | null> {
-    const { rows } = await this.pool.query<{
-      graph: { nodes: Array<{ type: string; data: { label: string } }> };
-    }>('SELECT graph FROM mindmap_cache WHERE id = 1');
-
-    if (!rows[0]) return null;
-
-    const topicLabels = rows[0].graph.nodes
-      .filter(n => n.type === 'topic')
-      .map(n => n.data.label);
-    if (topicLabels.length === 0) return null;
-
-    const topicEmbeddings = await Promise.all(
-      topicLabels.map(label =>
-        this.openai.embeddings.create({ model: 'text-embedding-3-small', input: label })
-          .then(r => ({ label, embedding: r.data[0]!.embedding })),
-      ),
-    );
-
-    let closestLabel: string | null = null;
-    let closestDist = Infinity;
-    for (const { label, embedding: topicEmb } of topicEmbeddings) {
-      const dist = cosineDist(embedding, topicEmb);
-      if (dist < closestDist) { closestDist = dist; closestLabel = label; }
-    }
-    return closestLabel;
-  }
 }

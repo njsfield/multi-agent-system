@@ -91,6 +91,8 @@ export interface HistoryMessage {
   content: string;
   source: string;
   contentType: "text" | "markdown";
+  topicId?: number | null;
+  subtopic?: string | null;
   createdAt: string;
 }
 
