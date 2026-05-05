@@ -302,8 +302,6 @@ chance of rain, and any notable hourly highlights. Be friendly and concise.`,
           .extract(message, lastAssistantContent)
           .catch(console.error);
       }
-      const agent = createWeatherAgent();
-      yield* agent.runStream(message, signal);
     },
     {
       staticDir: path.join(__dirname, '../dist/ui'),
