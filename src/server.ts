@@ -172,12 +172,12 @@ export function createAgentServer(
   });
 
   app.get("/flashcard", async (_req: Request, res: Response) => {
-    if (!options.getFlashcard) {
+    if (!options.flashcardAgent) {
       res.status(404).json({ error: "Flashcard not configured" });
       return;
     }
     try {
-      const card = await options.getFlashcard();
+      const card = await options.flashcardAgent.selectForReview();
       res.json(card ?? null);
     } catch (err) {
       res
@@ -187,8 +187,8 @@ export function createAgentServer(
   });
 
   app.post("/flashcard/:id/review", async (req: Request, res: Response) => {
-    if (!options.reviewFlashcard) {
-      res.status(404).json({ error: "Flashcard review not configured" });
+    if (!options.flashcardAgent) {
+      res.status(404).json({ error: "Flashcard not configured" });
       return;
     }
     const id = parseInt(
@@ -203,7 +203,7 @@ export function createAgentServer(
       return;
     }
     try {
-      const nextDueAt = await options.reviewFlashcard(id, score);
+      const nextDueAt = await options.flashcardAgent.applyReview(id, score);
       res.json({ nextDueAt });
     } catch (err) {
       res
@@ -213,12 +213,12 @@ export function createAgentServer(
   });
 
   app.get("/mindmap", async (_req: Request, res: Response) => {
-    if (!options.getMindmap) {
+    if (!options.mindmapAgent) {
       res.status(404).json({ error: "Mindmap not configured" });
       return;
     }
     try {
-      res.json(await options.getMindmap());
+      res.json(await options.mindmapAgent.getGraph());
     } catch (err) {
       res
         .status(500)

@@ -1,4 +1,5 @@
-import type { FlashcardCard } from "./flashcard-service";
+import type { FlashcardAgent } from "./flashcard-agent";
+import type { MindmapAgent } from "./mindmap-agent";
 
 export interface ToolCallRequest {
   toolName: string;
@@ -96,10 +97,27 @@ export interface HistoryMessage {
   createdAt: string;
 }
 
+export interface DueCard {
+  id: number;
+  question: string;
+  topicId: number | null;
+  topicLabel: string | null;
+  lastScore: string | null;
+  daysOverdue: number;
+}
+
+export interface FlashcardCard {
+  id: number;
+  question: string;
+  answer: string;
+  topicId: number | null;
+  topicLabel: string | null;
+}
+
 export interface MindmapNode {
   id: string;
   type: "center" | "topic" | "subtopic" | "fact";
-  data: { label: string; color?: string };
+  data: { label: string; color?: string; topicId?: number; subtopic?: string; topicLabel?: string };
 }
 
 export interface MindmapEdge {
@@ -117,7 +135,6 @@ export interface MindmapGraph {
 export interface AgentServerOptions {
   staticDir?: string;
   getHistory?: (limit: number) => Promise<HistoryMessage[]>;
-  getFlashcard?: () => Promise<FlashcardCard | null>;
-  reviewFlashcard?: (id: number, score: string) => Promise<Date>;
-  getMindmap?: () => Promise<MindmapGraph>;
+  flashcardAgent?: FlashcardAgent;
+  mindmapAgent?: MindmapAgent;
 }

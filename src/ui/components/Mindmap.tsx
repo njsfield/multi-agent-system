@@ -27,7 +27,7 @@ function CenterNode({ data }: NodeProps) {
         textAlign: "center",
       }}
     >
-      {data.label}
+      {data?.label ?? "All Topics"}
     </div>
   );
 }
@@ -40,13 +40,13 @@ function TopicNode({ data }: NodeProps) {
         borderRadius: 20,
         whiteSpace: "nowrap",
         background: "#0f172a",
-        border: `1.5px solid ${data.color ?? "#6366f1"}`,
-        color: data.color ?? "#a5b4fc",
+        border: `1.5px solid ${data?.color ?? "#6366f1"}`,
+        color: data?.color ?? "#a5b4fc",
         fontSize: 12,
         fontWeight: 500,
       }}
     >
-      {data.label}
+      {data?.label ?? ""}
     </div>
   );
 }
@@ -64,7 +64,7 @@ function FactNode({ data }: NodeProps) {
         fontSize: 11,
       }}
     >
-      {data.label}
+      {data?.label ?? ""}
     </div>
   );
 }
@@ -83,7 +83,7 @@ function SubtopicNode({ data }: NodeProps) {
         fontWeight: 500,
       }}
     >
-      {data.label}
+      {data?.label ?? ""}
     </div>
   );
 }
@@ -94,11 +94,16 @@ const nodeTypes = { center: CenterNode, topic: TopicNode, fact: FactNode, subtop
 // Position computation
 // ---------------------------------------------------------------------------
 
+function normalizeNode(n: MindmapNode): MindmapNode {
+  return { ...n, data: { ...{ label: "" }, ...n.data } };
+}
+
 function buildFlowGraph(graph: MindmapGraph): { nodes: Node[]; edges: Edge[] } {
   const CX = 500,
     CY = 350;
+  const normalized = graph.nodes.map(normalizeNode);
   const nodeMap = new Map<string, MindmapNode>(
-    graph.nodes.map((n) => [n.id, n]),
+    normalized.map((n) => [n.id, n]),
   );
 
   // Map topic id → its child ids (subtopics or facts)
@@ -121,10 +126,10 @@ function buildFlowGraph(graph: MindmapGraph): { nodes: Node[]; edges: Edge[] } {
   const rfNodes: Node[] = [];
   const rfEdges: Edge[] = [];
 
-  const topics = graph.nodes.filter((n) => n.type === "topic");
+  const topics = normalized.filter((n) => n.type === "topic");
 
   // Center node
-  const center = graph.nodes.find((n) => n.type === "center");
+  const center = normalized.find((n) => n.type === "center");
   if (center) {
     rfNodes.push({
       id: center.id,
@@ -196,7 +201,7 @@ function buildFlowGraph(graph: MindmapGraph): { nodes: Node[]; edges: Edge[] } {
       source: edge.source,
       target: edge.target,
       style: isTopicEdge
-        ? { stroke: targetNode?.data.color ?? "#6366f1", strokeWidth: 2 }
+        ? { stroke: targetNode?.data?.color ?? "#6366f1", strokeWidth: 2 }
         : isSubtopicEdge
         ? { stroke: "#555765", strokeWidth: 1, strokeDasharray: "2,2" }
         : { stroke: "#374151", strokeWidth: 1, strokeDasharray: "4,4" },

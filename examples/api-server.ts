@@ -6,14 +6,11 @@ import { LoggingMiddleware } from "../src/middleware";
 import { createAgentServer } from "../src/server";
 import OpenAI from "openai";
 import { PgVectorMemory, createPgPool } from "../src/pg-memory";
-import { MindmapService } from "../src/mindmap";
 import { ListMemory } from "../src/memory";
 import type { BaseMemory } from "../src/memory";
 import type { HistoryMessage } from "../src/types";
-import { FlashcardService } from "../src/flashcard-service";
-import { FlashcardExtractor } from "../src/flashcard-extractor";
-import { createFlashcardSelectionAgent } from "../src/flashcard-agent";
-import type { FlashcardCard } from "../src/flashcard-service";
+import { FlashcardAgent } from "../src/flashcard-agent";
+import { MindmapAgent } from "../src/mindmap-agent";
 
 config({ path: path.join(__dirname, "../.env") });
 
@@ -235,58 +232,30 @@ const PORT = 3000;
 
 (async () => {
   // Attempt postgres connection; fall back to in-memory if unavailable
-  let agentMemory: BaseMemory;
+  let agentMemory: BaseMemory = new ListMemory();
   let getHistory: ((limit: number) => Promise<HistoryMessage[]>) | undefined;
-  let getFlashcard: (() => Promise<FlashcardCard | null>) | undefined;
-  let reviewFlashcard:
-    | ((id: number, score: string) => Promise<Date>)
-    | undefined;
-  let flashcardExtractor: FlashcardExtractor | undefined;
-  let mindmapService: MindmapService | undefined;
-
-  const DATABASE_URL =
-    process.env["DATABASE_URL"] ?? "postgresql://localhost/tsagent";
-  const openaiClient = new OpenAI({ apiKey: process.env["OPENAI_API_KEY"] });
+  let flashcardAgent: FlashcardAgent | undefined;
+  let mindmapAgent: MindmapAgent | undefined;
 
   try {
+    const DATABASE_URL =
+      process.env["DATABASE_URL"] ?? "postgresql://localhost/tsagent";
+    const openaiClient = new OpenAI({ apiKey: process.env["OPENAI_API_KEY"] });
+
     const pool = createPgPool(DATABASE_URL);
-    await pool.query("SELECT 1"); // connection test
+    await pool.query("SELECT 1");
     const pgMemory = new PgVectorMemory(pool, openaiClient);
     agentMemory = pgMemory;
     getHistory = (limit) => pgMemory.getHistory(limit);
+    flashcardAgent = new FlashcardAgent(pool);
+    mindmapAgent = new MindmapAgent(pool);
 
-    const flashcardService = new FlashcardService(pool);
-    const flashcardAgent = createFlashcardSelectionAgent(pool);
-    flashcardExtractor = new FlashcardExtractor(pool, openaiClient);
-
-    getFlashcard = async () => {
-      const response = await flashcardAgent.run(
-        "Select a flashcard for review.",
-      );
-      const lastMsg = response.messages.at(-1);
-      if (!lastMsg) return null;
-      try {
-        const parsed = JSON.parse(lastMsg.content) as { id?: number | null };
-        if (!parsed.id) return null;
-        return flashcardService.getById(parsed.id);
-      } catch {
-        const match = lastMsg.content.match(/"id"\s*:\s*(\d+)/);
-        if (!match) return null;
-        return flashcardService.getById(parseInt(match[1]!, 10));
-      }
-    };
-
-    reviewFlashcard = (id: number, score: string) =>
-      flashcardService.applyReview(id, score);
-
-    mindmapService = new MindmapService(pool, openaiClient);
-    console.log("[startup] postgres memory: connected");
+    console.log("[startup] postgres: connected");
   } catch (err) {
     console.warn(
       "[startup] postgres unavailable, falling back to in-memory:",
       err,
     );
-    agentMemory = new ListMemory();
   }
 
   function createWeatherAgent(): OpenAIAgent {
@@ -318,20 +287,15 @@ chance of rain, and any notable hourly highlights. Be friendly and concise.`,
         }
         yield item;
       }
-      if (flashcardExtractor) {
-        flashcardExtractor
-          .extract(message, lastAssistantContent)
-          .catch(console.error);
+      if (flashcardAgent) {
+        flashcardAgent.extract(message, lastAssistantContent).catch(console.error);
       }
-      const agent = createWeatherAgent();
-      yield* agent.runStream(message, signal);
     },
     {
       staticDir: path.join(__dirname, "../dist/ui"),
       getHistory,
-      getFlashcard,
-      reviewFlashcard,
-      getMindmap: mindmapService ? () => mindmapService!.getGraph() : undefined,
+      flashcardAgent,
+      mindmapAgent,
     },
   );
 

@@ -3,7 +3,7 @@ import fs from 'fs';
 import { config } from 'dotenv';
 import { FunctionTool } from '../../tool';
 import { OpenAIAgent } from '../../openai-agent';
-import { FLASHCARD_AGENT_INSTRUCTIONS } from '../../flashcard-agent';
+import { SELECTION_INSTRUCTIONS as FLASHCARD_AGENT_INSTRUCTIONS } from '../../flashcard-agent';
 import { SelectionReasoningJudge, PriorityJudge, EdgeCaseJudge } from './judges';
 import { scenarios } from './scenarios';
 import { renderReport } from './report';

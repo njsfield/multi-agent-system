@@ -10,7 +10,8 @@
     "lint": "eslint src/ui",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "eval": "ts-node src/run-eval.ts"
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.1",
