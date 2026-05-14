@@ -1,26 +1,46 @@
-import { FormEvent, KeyboardEvent, useRef } from 'react';
-import { Send, Square } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { KeyboardEvent, useRef } from "react";
+import { Send, Square } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { TopicFilterDropdown } from "@/components/TopicFilterDropdown";
+import { FlashcardButton } from "@/components/FlashcardButton";
+import type { TopicTree, FlashcardFilter } from "@/lib/types";
 
 interface ChatInputProps {
   onSend: (message: string) => void;
   onCancel: () => void;
   isStreaming: boolean;
+  topics: TopicTree[];
+  flashcardFilter: FlashcardFilter;
+  onFilterChange: (filter: FlashcardFilter) => void;
+  onFetchFlashcard: () => void;
+  isFlashcardActive: boolean;
 }
 
-export function ChatInput({ onSend, onCancel, isStreaming }: ChatInputProps) {
+export function ChatInput({
+  onSend,
+  onCancel,
+  isStreaming,
+  topics,
+  flashcardFilter,
+  onFilterChange,
+  onFetchFlashcard,
+  isFlashcardActive,
+}: ChatInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const submit = () => {
     const value = inputRef.current?.value.trim();
     if (!value || isStreaming) return;
-    inputRef.current!.value = '';
+    inputRef.current!.value = "";
     onSend(value);
   };
 
   const handleKey = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      submit();
+    }
   };
 
   return (
@@ -33,6 +53,17 @@ export function ChatInput({ onSend, onCancel, isStreaming }: ChatInputProps) {
           disabled={isStreaming}
           autoFocus
           className="flex-1"
+        />
+
+        <TopicFilterDropdown
+          topics={topics}
+          filter={flashcardFilter}
+          onChange={onFilterChange}
+        />
+
+        <FlashcardButton
+          onClick={onFetchFlashcard}
+          disabled={isFlashcardActive}
         />
 
         {isStreaming ? (

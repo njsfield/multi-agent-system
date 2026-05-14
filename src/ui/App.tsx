@@ -1,16 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 import { useChat } from "@/hooks/useChat";
 import { useFlashcard } from "@/hooks/useFlashcard";
+import { useTopics } from "@/hooks/useTopics";
 import { Message } from "@/components/Message";
 import { ChatInput } from "@/components/ChatInput";
 import { FlashcardWidget } from "@/components/FlashcardWidget";
 import { Mindmap } from "@/components/Mindmap";
+import type { FlashcardFilter } from "@/lib/types";
 
 export function App() {
   const { messages, isStreaming, sendMessage, cancel } = useChat();
-  const { card, phase, reveal, submitScore } = useFlashcard();
+  const { card, phase, reveal, submitScore, fetchNext } = useFlashcard();
+  const { topics } = useTopics();
   const bottomRef = useRef<HTMLDivElement>(null);
   const [view, setView] = useState<"chat" | "mindmap">("chat");
+  const [flashcardFilter, setFlashcardFilter] = useState<FlashcardFilter>({});
 
   useEffect(() => {
     if (view === "chat")
@@ -56,10 +60,9 @@ export function App() {
         <div className="mx-auto flex max-w-3xl flex-col gap-5">
           {messages.length === 0 && (
             <p className="text-center text-sm text-muted-foreground">
-              Ask the weather agent anything…
+              Ask anything…
             </p>
           )}
-
           {messages.map((msg) => (
             <Message key={msg.id} {...msg} />
           ))}
@@ -79,6 +82,11 @@ export function App() {
         onSend={sendMessage}
         onCancel={cancel}
         isStreaming={isStreaming}
+        topics={topics}
+        flashcardFilter={flashcardFilter}
+        onFilterChange={setFlashcardFilter}
+        onFetchFlashcard={() => fetchNext(flashcardFilter)}
+        isFlashcardActive={phase === "question" || phase === "answer"}
       />
     </div>
   );
