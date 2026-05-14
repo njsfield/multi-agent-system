@@ -225,6 +225,7 @@ function buildMindmapTools(
 
 export class MindmapAgent extends OpenAIAgent {
   private _state: { graph: MindmapGraph | null };
+  private _pool: pg.Pool;
 
   constructor(pool: pg.Pool) {
     const state = { graph: null as MindmapGraph | null };
@@ -237,6 +238,7 @@ export class MindmapAgent extends OpenAIAgent {
     });
 
     this._state = state;
+    this._pool = pool;
   }
 
   async getGraph(): Promise<MindmapGraph> {
@@ -246,5 +248,25 @@ export class MindmapAgent extends OpenAIAgent {
     await this.run("Build the current mindmap graph from conversation data.");
 
     return this._state.graph ?? { nodes: [], edges: [], updatedAt: new Date().toISOString() };
+  }
+
+  async getGraphCached(maxAgeMs = 60_000): Promise<MindmapGraph> {
+    const { rows } = await this._pool.query<{ graph: MindmapGraph; updated_at: Date }>(
+      "SELECT graph, updated_at FROM mindmap_cache WHERE id = 1",
+    );
+    if (rows[0]) {
+      const age = Date.now() - new Date(rows[0].updated_at).getTime();
+      if (age < maxAgeMs) return rows[0].graph;
+    }
+
+    const graph = await this.getGraph();
+
+    await this._pool.query(
+      `INSERT INTO mindmap_cache (id, graph, updated_at) VALUES (1, $1, now())
+       ON CONFLICT (id) DO UPDATE SET graph = EXCLUDED.graph, updated_at = now()`,
+      [JSON.stringify(graph)],
+    );
+
+    return graph;
   }
 }

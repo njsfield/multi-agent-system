@@ -10,7 +10,8 @@ import { ListMemory } from "../src/memory";
 import type { BaseMemory } from "../src/memory";
 import type { HistoryMessage } from "../src/types";
 import { FlashcardAgent } from "../src/flashcard-agent";
-import { MindmapAgent } from "../src/mindmap-agent";
+import { MindmapMcpClient } from "../src/mcp-client";
+import type { MindmapGraph } from "../src/types";
 
 config({ path: path.join(__dirname, "../.env") });
 
@@ -235,7 +236,7 @@ const PORT = 3000;
   let agentMemory: BaseMemory = new ListMemory();
   let getHistory: ((limit: number) => Promise<HistoryMessage[]>) | undefined;
   let flashcardAgent: FlashcardAgent | undefined;
-  let mindmapAgent: MindmapAgent | undefined;
+  let getMindmap: (() => Promise<MindmapGraph>) | undefined;
 
   try {
     const DATABASE_URL =
@@ -248,12 +249,15 @@ const PORT = 3000;
     agentMemory = pgMemory;
     getHistory = (limit) => pgMemory.getHistory(limit);
     flashcardAgent = new FlashcardAgent(pool);
-    mindmapAgent = new MindmapAgent(pool);
 
-    console.log("[startup] postgres: connected");
+    const mindmapClient = new MindmapMcpClient();
+    await mindmapClient.connect();
+    getMindmap = () => mindmapClient.getMindmap();
+
+    console.log("[startup] postgres + mcp: connected");
   } catch (err) {
     console.warn(
-      "[startup] postgres unavailable, falling back to in-memory:",
+      "[startup] postgres or mcp unavailable, falling back to in-memory:",
       err,
     );
   }
@@ -295,7 +299,7 @@ chance of rain, and any notable hourly highlights. Be friendly and concise.`,
       staticDir: path.join(__dirname, "../dist/ui"),
       getHistory,
       flashcardAgent,
-      mindmapAgent,
+      getMindmap,
     },
   );
 
