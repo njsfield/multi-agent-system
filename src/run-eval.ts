@@ -7,6 +7,7 @@ const agentName = process.argv[2];
 
 const agents: Record<string, string> = {
   FlashcardAgent: "./flashcard-agent.eval",
+  "FlashcardAgent:extraction": "./flashcard-agent.eval",
   MindmapAgent: "./mindmap-agent.eval",
 };
 

@@ -2,7 +2,7 @@ import path from "path";
 import { config } from "dotenv";
 import { OpenAIAgent } from "./openai-agent";
 import { FunctionTool } from "./tool";
-import { SELECTION_INSTRUCTIONS } from "./flashcard-agent";
+import { SELECTION_INSTRUCTIONS, EXTRACTION_INSTRUCTIONS } from "./flashcard-agent";
 import { LLMJudge, runEval } from "./eval-utils";
 import type { DueCard } from "./types";
 
@@ -148,3 +148,151 @@ async function main() {
 }
 
 main().catch(console.error);
+
+// ---------------------------------------------------------------------------
+// Extraction eval
+// ---------------------------------------------------------------------------
+
+interface ExtractionScenario {
+  id: string;
+  description: string;
+  userMsg: string;
+  assistantMsg: string;
+  expectedBehavior: string;
+  minCards: number;
+  maxCards: number;
+}
+
+function createExtractionEvalAgent(): {
+  agent: OpenAIAgent;
+  getSavedCards: () => Array<{ question: string; answer: string }>;
+} {
+  const state = { savedCards: [] as Array<{ question: string; answer: string }> };
+
+  const saveFlashcards = new FunctionTool(
+    (params) => {
+      const raw = params["flashcards"];
+      if (!Array.isArray(raw)) {
+        state.savedCards = [];
+        return JSON.stringify({ saved: 0 });
+      }
+      state.savedCards = (raw as Array<{ question?: string; answer?: string }>)
+        .filter((c) => c.question?.trim() && c.answer?.trim())
+        .slice(0, 5)
+        .map((c) => ({ question: c.question!.trim(), answer: c.answer!.trim() }));
+      return JSON.stringify({ saved: state.savedCards.length });
+    },
+    "save_flashcards",
+    "Save an array of flashcard {question, answer} pairs extracted from the exchange. Pass an empty array if no facts found.",
+    {
+      type: "object",
+      properties: {
+        flashcards: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              question: { type: "string" },
+              answer: { type: "string" },
+            },
+            required: ["question", "answer"],
+          },
+        },
+      },
+      required: ["flashcards"],
+    },
+  );
+
+  const agent = new OpenAIAgent("flashcard-extraction-eval", EXTRACTION_INSTRUCTIONS, {
+    tools: [saveFlashcards],
+    streamTokens: false,
+  });
+
+  return { agent, getSavedCards: () => state.savedCards };
+}
+
+// Count is validated inline via `inRange` in the run() output — no LLM judge needed.
+
+class DistinctnessJudge extends LLMJudge {
+  criteriaPrompt =
+    "Evaluate whether all extracted flashcards cover genuinely different facts. Score 0 if any two cards are rephrasing of the same concept. Score 1 if all cards cover distinct, non-overlapping facts.";
+}
+
+class QualityJudge extends LLMJudge {
+  criteriaPrompt =
+    "Evaluate whether the flashcard questions are clear, specific, and independently answerable, and whether the answers are accurate, concise, and directly responsive to the question. Score 0 if any card has a vague question or an inaccurate/incomplete answer.";
+}
+
+const extractionScenarios: ExtractionScenario[] = [
+  {
+    id: "multi-fact-rich",
+    description: "Rich compound interest explanation with 5+ distinct facts",
+    userMsg: "Can you explain compound interest in detail?",
+    assistantMsg: `Compound interest is interest calculated on both the initial principal and the accumulated interest from previous periods. The formula is A = P(1 + r/n)^(nt), where P is principal, r is annual interest rate, n is compounding frequency, and t is time in years. A useful shortcut is the Rule of 72: divide 72 by the annual interest rate to estimate how many years it takes for money to double. More frequent compounding (daily vs annually) yields slightly more growth. Compound interest differs from simple interest, which is calculated only on the principal.`,
+    expectedBehavior: "Extracts >= 3 distinct flashcards covering the definition, formula, Rule of 72, compounding frequency, and/or the comparison to simple interest.",
+    minCards: 3,
+    maxCards: 5,
+  },
+  {
+    id: "single-fact-simple",
+    description: "Single clear fact — capital of France",
+    userMsg: "What is the capital of France?",
+    assistantMsg: "The capital of France is Paris.",
+    expectedBehavior: "Extracts exactly 1 flashcard.",
+    minCards: 1,
+    maxCards: 1,
+  },
+  {
+    id: "no-facts",
+    description: "Casual exchange with no learnable facts",
+    userMsg: "Thanks, that was really helpful!",
+    assistantMsg: "You're welcome! Let me know if you have any other questions.",
+    expectedBehavior: "Extracts 0 flashcards — no learnable fact present.",
+    minCards: 0,
+    maxCards: 0,
+  },
+  {
+    id: "near-duplicate-facts",
+    description: "Exchange that repeats the same fact in two phrasings",
+    userMsg: "What does DNA stand for?",
+    assistantMsg: "DNA stands for deoxyribonucleic acid. In other words, deoxyribonucleic acid is the molecule we call DNA.",
+    expectedBehavior: "Extracts exactly 1 flashcard — the two phrasings are the same fact.",
+    minCards: 1,
+    maxCards: 1,
+  },
+  {
+    id: "max-cap",
+    description: "Extremely information-dense exchange touching 10+ facts",
+    userMsg: "Tell me everything about the solar system.",
+    assistantMsg: `The solar system formed about 4.6 billion years ago from a giant molecular cloud. The Sun contains 99.86% of the solar system's mass. There are 8 planets: Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune. The asteroid belt lies between Mars and Jupiter. Jupiter is the largest planet. Neptune is the farthest from the Sun. Earth is the only known planet with life. Mars has the tallest volcano, Olympus Mons. Saturn's rings are made mostly of ice and rock. Light from the Sun takes about 8 minutes to reach Earth.`,
+    expectedBehavior: "Extracts exactly 5 flashcards (the maximum cap), despite more facts being available.",
+    minCards: 5,
+    maxCards: 5,
+  },
+];
+
+async function mainExtraction() {
+  await runEval({
+    agentName: "FlashcardAgent:extraction",
+    scenarios: extractionScenarios,
+    judges: [
+      new DistinctnessJudge(),
+      new QualityJudge(),
+    ],
+    run: async (scenario) => {
+      const { agent, getSavedCards } = createExtractionEvalAgent();
+      await agent.run(
+        `Extract flashcards from this exchange:\n\nUser: "${scenario.userMsg}"\nAssistant: "${scenario.assistantMsg}"`,
+      );
+      const cards = getSavedCards();
+      const count = cards.length;
+      const inRange = count >= scenario.minCards && count <= scenario.maxCards;
+      return JSON.stringify({ count, inRange, cards });
+    },
+    buildContext: (scenario) =>
+      `Scenario: ${scenario.description}\nExpected: ${scenario.expectedBehavior}\nExpected card count: [${scenario.minCards}, ${scenario.maxCards}]`,
+    outputDir: __dirname,
+  });
+}
+
+mainExtraction().catch(console.error);
