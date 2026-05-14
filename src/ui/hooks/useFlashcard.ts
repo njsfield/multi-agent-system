@@ -8,6 +8,7 @@ export interface FlashcardData {
   question: string;
   answer: string;
   topicLabel: string | null;
+  subtopic: string | null;
 }
 
 export function useFlashcard() {
