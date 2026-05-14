@@ -2,7 +2,7 @@ import pg from "pg";
 import { OpenAIAgent } from "./openai-agent";
 import { FunctionTool } from "./tool";
 import { OtelMiddleware } from "./otel-middleware";
-import type { FlashcardCard, DueCard } from "./types";
+import type { FlashcardCard, DueCard, FlashcardFilter, TopicTree } from "./types";
 
 // ---------------------------------------------------------------------------
 // SM-2 spaced-repetition algorithm
@@ -77,15 +77,26 @@ Steps:
 function buildSelectionTools(
   pool: pg.Pool,
   state: { selectedId: number | null },
+  filterRef: { current: FlashcardFilter | undefined },
 ): FunctionTool[] {
   const getDueFlashcards = new FunctionTool(
     async (params) => {
       const limit = Math.min(Number(params["limit"] ?? 10), 20);
-      const topicId = params["topic_id"] != null ? Number(params["topic_id"]) : undefined;
+      const filter = filterRef.current;
 
       const args: unknown[] = [limit];
-      const topicClause =
-        topicId !== undefined ? ` AND f.topic_id = $${args.push(topicId)}` : "";
+      const parts: string[] = [];
+
+      if (filter?.topicIds && filter.topicIds.length > 0) {
+        parts.push(`f.topic_id = ANY($${args.push(filter.topicIds)}::int[])`);
+      }
+      if (filter?.subtopics && filter.subtopics.length > 0) {
+        for (const { topicId, subtopic } of filter.subtopics) {
+          parts.push(`(f.topic_id = $${args.push(topicId)} AND f.subtopic = $${args.push(subtopic)})`);
+        }
+      }
+
+      const filterClause = parts.length > 0 ? `AND (${parts.join(" OR ")})` : "";
 
       try {
         const { rows } = await pool.query<{
@@ -105,7 +116,8 @@ function buildSelectionTools(
              WHERE flashcard_id = f.id
              ORDER BY reviewed_at DESC LIMIT 1
            ) r ON true
-           WHERE (f.next_due_at <= now() OR f.repetitions = 0)${topicClause}
+           WHERE (f.next_due_at <= now() OR f.repetitions = 0)
+           ${filterClause}
            ORDER BY f.next_due_at ASC, f.repetitions ASC
            LIMIT $1`,
           args,
@@ -122,7 +134,6 @@ function buildSelectionTools(
             Math.floor((Date.now() - new Date(r.next_due_at).getTime()) / 86_400_000),
           ),
         }));
-
         return JSON.stringify(cards);
       } catch (err) {
         return JSON.stringify({ error: String(err) });
@@ -134,7 +145,6 @@ function buildSelectionTools(
       type: "object",
       properties: {
         limit: { type: "number", description: "Max cards to return (default 10)" },
-        topic_id: { type: "number", description: "Optional: filter by topic" },
       },
       required: [],
     },
@@ -216,14 +226,16 @@ export class FlashcardAgent extends OpenAIAgent {
   private _pool: pg.Pool;
   private _state: { selectedId: number | null };
   private _extractState: { savedCards: Array<{ question: string; answer: string }> };
+  private _filterRef: { current: FlashcardFilter | undefined };
 
   constructor(pool: pg.Pool) {
     const state = { selectedId: null as number | null };
     const extractState = { savedCards: [] as Array<{ question: string; answer: string }> };
+    const filterRef = { current: undefined as FlashcardFilter | undefined };
 
     super("flashcard-agent", SELECTION_INSTRUCTIONS, {
       tools: [
-        ...buildSelectionTools(pool, state),
+        ...buildSelectionTools(pool, state, filterRef),
         ...buildExtractionTools(pool, extractState),
       ],
       middleware: [new OtelMiddleware("flashcard-agent")],
@@ -233,22 +245,48 @@ export class FlashcardAgent extends OpenAIAgent {
     this._pool = pool;
     this._state = state;
     this._extractState = extractState;
+    this._filterRef = filterRef;
   }
 
-  async selectForReview(topicId?: number): Promise<FlashcardCard | null> {
+  async selectForReview(filter?: FlashcardFilter): Promise<FlashcardCard | null> {
+    this._filterRef.current = filter;
     this.context.messages = [];
     this.instructions = SELECTION_INSTRUCTIONS;
     this._state.selectedId = null;
 
-    const prompt =
-      topicId !== undefined
-        ? `Select a flashcard for review from topic_id ${topicId}. Call get_due_flashcards with topic_id=${topicId}, then select_card.`
-        : `Select a flashcard for review. Call get_due_flashcards, then select_card.`;
+    const hasFilter =
+      (filter?.topicIds?.length ?? 0) > 0 ||
+      (filter?.subtopics?.length ?? 0) > 0;
+
+    const prompt = hasFilter
+      ? `Select a flashcard for review using the active topic filter. Call get_due_flashcards, then select_card.`
+      : `Select a flashcard for review. Call get_due_flashcards, then select_card.`;
 
     await this.run(prompt);
+    this._filterRef.current = undefined;
 
     if (this._state.selectedId === null) return null;
     return this._fetchById(this._state.selectedId);
+  }
+
+  async getTopicsWithSubtopics(): Promise<TopicTree[]> {
+    const { rows } = await this._pool.query<{
+      id: number;
+      label: string;
+      subtopics: string[] | null;
+    }>(
+      `SELECT t.id, t.label,
+         array_agg(DISTINCT f.subtopic) FILTER (WHERE f.subtopic IS NOT NULL) AS subtopics
+       FROM topics t
+       JOIN flashcards f ON f.topic_id = t.id
+       GROUP BY t.id, t.label
+       ORDER BY t.label`,
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      label: r.label,
+      subtopics: r.subtopics ?? [],
+    }));
   }
 
   async extract(userMsg: string, assistantMsg: string, sourceMessageId?: number): Promise<void> {
