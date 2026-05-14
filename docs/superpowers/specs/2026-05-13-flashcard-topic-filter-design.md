@@ -209,12 +209,75 @@ Behaviours:
 
 ---
 
-## File map
+---
+
+## Multi-flashcard extraction
+
+### Behaviour change
+
+`extract()` currently produces at most 1 flashcard per exchange. It will be updated to extract **up to 5 distinct facts** per exchange.
+
+The prompt instructs the LLM to:
+- Identify all distinct, independently learnable facts in the exchange
+- Emit only facts that are not duplicates of each other within the batch
+- Return a JSON array of up to 5 `{ question, answer }` pairs
+- Return an empty array if no learnable facts exist
+
+Each candidate is then independently checked against the existing flashcard DB using the existing cosine-similarity deduplication logic. Cards that pass deduplication are inserted, others are silently skipped.
+
+Topic and subtopic are inherited from the source message for all cards in the batch — same `topic_id` and `subtopic` for every card extracted from the same exchange.
+
+### Prompt response shape
+
+```json
+{
+  "flashcards": [
+    { "question": "...", "answer": "..." },
+    { "question": "...", "answer": "..." }
+  ]
+}
+```
+
+Max 5 entries. Empty array `[]` when nothing learnable is found.
+
+---
+
+## Extraction eval (`flashcard-agent.eval.ts` addition)
+
+A new eval section added to the existing `flashcard-agent.eval.ts`, following the same pattern as the selection eval (mock tools, `runEval`, LLM judges).
+
+### Mock tool
+
+A `save_flashcards` mock tool replaces the real DB insert. It accepts an array of `{ question, answer }` objects and records them in local state for the judge to inspect.
+
+### Scenarios
+
+| id | Exchange description | Expected |
+|---|---|---|
+| `multi-fact-rich` | A detailed explanation of how compound interest works, covering: what it is, the formula, the rule of 72, the effect of frequency, and comparison to simple interest | ≥ 3 distinct flashcards extracted |
+| `single-fact-simple` | User asks what the capital of France is, assistant says Paris | Exactly 1 flashcard |
+| `no-facts` | User says "thanks, that's helpful" and assistant says "you're welcome" | 0 flashcards |
+| `near-duplicate-facts` | Exchange that repeats the same fact in two different phrasings | Exactly 1 flashcard (prompt-level deduplication within batch) |
+| `max-cap` | An extremely detailed exchange touching 10+ distinct facts | At most 5 flashcards |
+
+### Judges
+
+- **CountJudge** — checks count is within expected bounds for the scenario
+- **DistinctnessJudge** — checks that extracted cards are genuinely distinct from each other (no rephrasing of the same concept)
+- **QualityJudge** — checks that questions are clear, specific, and answerable; answers are accurate and concise
+
+### File
+
+New eval added inline to `src/flashcard-agent.eval.ts` as a second `runEval` call with `agentName: 'FlashcardAgent:extraction'`.
+
+---
+
+## Updated file map
 
 | File | Change |
 |---|---|
 | `schema.sql` | Add `subtopic` column to `flashcards` |
-| `src/flashcard-agent.ts` | `selectForReview(filter?)`, `extract()` copies subtopic, `getTopicsWithSubtopics()` |
+| `src/flashcard-agent.ts` | `selectForReview(filter?)`, `extract()` extracts up to 5 cards, `getTopicsWithSubtopics()` |
 | `src/server.ts` | Add `GET /topics`, `POST /flashcard` routes; extend `AgentServerOptions` |
 | `src/start-server.ts` | Wire `getTopics` into server options |
 | `src/ui/lib/types.ts` | New — `FlashcardFilter`, `TopicTree` types |
@@ -224,6 +287,7 @@ Behaviours:
 | `src/ui/components/FlashcardButton.tsx` | New — icon button |
 | `src/ui/components/ChatInput.tsx` | Add dropdown + flashcard button |
 | `src/ui/App.tsx` | Add filter state, wire new props |
+| `src/flashcard-agent.eval.ts` | Add extraction eval scenarios and judges |
 
 ---
 
