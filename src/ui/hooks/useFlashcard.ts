@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import type { FlashcardFilter } from "@/lib/types";
 
 export type FlashcardPhase = 'idle' | 'question' | 'answer' | 'done';
 
@@ -42,5 +43,19 @@ export function useFlashcard() {
     [card],
   );
 
-  return { card, phase, reveal, submitScore };
+  const fetchNext = useCallback(async (filter?: FlashcardFilter) => {
+    const res = await fetch("/flashcard", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(filter ?? {}),
+    }).catch(() => null);
+    if (!res?.ok) return;
+    const data = (await res.json()) as FlashcardData | null;
+    if (data?.id) {
+      setCard(data);
+      setPhase("question");
+    }
+  }, []);
+
+  return { card, phase, reveal, submitScore, fetchNext };
 }
