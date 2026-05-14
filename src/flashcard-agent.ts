@@ -58,12 +58,17 @@ Prefer topic variety. Call select_card with the chosen id, or id=null if none av
 
 export const EXTRACTION_INSTRUCTIONS = `You are a flashcard extractor for spaced repetition learning.
 
-Given a conversation exchange, decide if it contains a clear factual Q&A worth memorising.
+Given a conversation exchange, extract up to 5 distinct, independently learnable facts as flashcards.
+
+Rules:
+- Only extract clear factual claims that are worth memorising.
+- Each flashcard must cover a DIFFERENT fact — do not rephrase the same concept twice.
+- If the exchange is casual chat, a task request, or contains no clear facts, call save_flashcards with an empty array.
+- Questions must be specific and answerable. Answers must be concise and direct.
 
 Steps:
-1. If the exchange contains a learnable fact, call get_flashcards_by_topic to check for duplicates.
-2. If no duplicate exists, call save_flashcard with a concise question and direct answer.
-3. If the exchange is casual chat, task help, or contains no clear fact, do nothing.`;
+1. Identify all distinct learnable facts in the exchange (max 5).
+2. Call save_flashcards with the array of {question, answer} pairs (empty array if none).`;
 
 // ---------------------------------------------------------------------------
 // Tool factories
@@ -155,67 +160,52 @@ function buildSelectionTools(
   return [getDueFlashcards, selectCard];
 }
 
-function buildExtractionTools(pool: pg.Pool): FunctionTool[] {
-  const getFlashcardsByTopic = new FunctionTool(
+function buildExtractionTools(
+  pool: pg.Pool,
+  state: { savedCards: Array<{ question: string; answer: string }> },
+): FunctionTool[] {
+  const saveFlashcards = new FunctionTool(
     async (params) => {
-      const topicId = params["topic_id"] != null ? Number(params["topic_id"]) : null;
-      try {
-        const { rows } = await pool.query<{ id: number; question: string }>(
-          topicId != null
-            ? `SELECT id, question FROM flashcards WHERE topic_id = $1 ORDER BY id DESC LIMIT 20`
-            : `SELECT id, question FROM flashcards ORDER BY id DESC LIMIT 20`,
-          topicId != null ? [topicId] : [],
-        );
-        return JSON.stringify(rows);
-      } catch (err) {
-        return JSON.stringify({ error: String(err) });
+      const raw = params["flashcards"];
+      if (!Array.isArray(raw) || raw.length === 0) {
+        state.savedCards = [];
+        return JSON.stringify({ saved: 0 });
       }
+
+      const cards = (raw as Array<{ question?: string; answer?: string }>)
+        .filter((c) => c.question?.trim() && c.answer?.trim())
+        .slice(0, 5);
+
+      state.savedCards = cards.map((c) => ({
+        question: c.question!.trim(),
+        answer: c.answer!.trim(),
+      }));
+
+      return JSON.stringify({ saved: cards.length });
     },
-    "get_flashcards_by_topic",
-    "Fetch existing flashcards (id, question) to check for duplicates before saving.",
+    "save_flashcards",
+    "Save an array of flashcard {question, answer} pairs extracted from the exchange. Pass an empty array if no facts found.",
     {
       type: "object",
       properties: {
-        topic_id: { type: "number", description: "Optional topic filter" },
+        flashcards: {
+          type: "array",
+          description: "Array of {question, answer} objects, max 5",
+          items: {
+            type: "object",
+            properties: {
+              question: { type: "string" },
+              answer: { type: "string" },
+            },
+            required: ["question", "answer"],
+          },
+        },
       },
-      required: [],
+      required: ["flashcards"],
     },
   );
 
-  const saveFlashcard = new FunctionTool(
-    async (params) => {
-      const question = String(params["question"] ?? "").trim();
-      const answer = String(params["answer"] ?? "").trim();
-      const topicId = params["topic_id"] != null ? Number(params["topic_id"]) : null;
-
-      if (!question || !answer) {
-        return JSON.stringify({ error: "question and answer required" });
-      }
-
-      try {
-        await pool.query(
-          `INSERT INTO flashcards (question, answer, topic_id) VALUES ($1, $2, $3)`,
-          [question, answer, topicId],
-        );
-        return JSON.stringify({ saved: true });
-      } catch (err) {
-        return JSON.stringify({ error: String(err) });
-      }
-    },
-    "save_flashcard",
-    "Persist a new flashcard to the database.",
-    {
-      type: "object",
-      properties: {
-        question: { type: "string", description: "Concise question" },
-        answer: { type: "string", description: "Direct factual answer" },
-        topic_id: { type: "number", description: "Optional topic ID" },
-      },
-      required: ["question", "answer"],
-    },
-  );
-
-  return [getFlashcardsByTopic, saveFlashcard];
+  return [saveFlashcards];
 }
 
 // ---------------------------------------------------------------------------
@@ -225,18 +215,24 @@ function buildExtractionTools(pool: pg.Pool): FunctionTool[] {
 export class FlashcardAgent extends OpenAIAgent {
   private _pool: pg.Pool;
   private _state: { selectedId: number | null };
+  private _extractState: { savedCards: Array<{ question: string; answer: string }> };
 
   constructor(pool: pg.Pool) {
     const state = { selectedId: null as number | null };
+    const extractState = { savedCards: [] as Array<{ question: string; answer: string }> };
 
     super("flashcard-agent", SELECTION_INSTRUCTIONS, {
-      tools: [...buildSelectionTools(pool, state), ...buildExtractionTools(pool)],
+      tools: [
+        ...buildSelectionTools(pool, state),
+        ...buildExtractionTools(pool, extractState),
+      ],
       middleware: [new OtelMiddleware("flashcard-agent")],
       streamTokens: false,
     });
 
     this._pool = pool;
     this._state = state;
+    this._extractState = extractState;
   }
 
   async selectForReview(topicId?: number): Promise<FlashcardCard | null> {
@@ -255,13 +251,42 @@ export class FlashcardAgent extends OpenAIAgent {
     return this._fetchById(this._state.selectedId);
   }
 
-  async extract(userMsg: string, assistantMsg: string): Promise<void> {
+  async extract(userMsg: string, assistantMsg: string, sourceMessageId?: number): Promise<void> {
     if (!assistantMsg.trim()) return;
+
+    // Fetch subtopic from source message if we have its id
+    let subtopic: string | null = null;
+    let topicId: number | null = null;
+    if (sourceMessageId != null) {
+      const { rows } = await this._pool.query<{ topic_id: number | null; subtopic: string | null }>(
+        'SELECT topic_id, subtopic FROM messages WHERE id = $1',
+        [sourceMessageId],
+      );
+      if (rows[0]) {
+        topicId = rows[0].topic_id;
+        subtopic = rows[0].subtopic;
+      }
+    }
+
+    this._extractState.savedCards = [];
     this.context.messages = [];
     this.instructions = EXTRACTION_INSTRUCTIONS;
+
     await this.run(
-      `Extract a flashcard from this exchange:\n\nUser: "${userMsg}"\nAssistant: "${assistantMsg}"`,
+      `Extract flashcards from this exchange:\n\nUser: "${userMsg}"\nAssistant: "${assistantMsg}"`,
     );
+
+    // Persist each candidate independently, checking for duplicates
+    for (const card of this._extractState.savedCards) {
+      const isDup = await this._isDuplicate(card.question);
+      if (!isDup) {
+        await this._pool.query(
+          `INSERT INTO flashcards (question, answer, topic_id, subtopic, source_message_id)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [card.question, card.answer, topicId, subtopic, sourceMessageId ?? null],
+        );
+      }
+    }
   }
 
   async applyReview(id: number, score: string): Promise<Date> {
@@ -313,6 +338,14 @@ export class FlashcardAgent extends OpenAIAgent {
     } finally {
       client.release();
     }
+  }
+
+  private async _isDuplicate(question: string): Promise<boolean> {
+    const { rows } = await this._pool.query<{ id: number }>(
+      `SELECT id FROM flashcards WHERE lower(trim(question)) = lower(trim($1)) LIMIT 1`,
+      [question],
+    );
+    return rows.length > 0;
   }
 
   private async _fetchById(id: number): Promise<FlashcardCard | null> {
