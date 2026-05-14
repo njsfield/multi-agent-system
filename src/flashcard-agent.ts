@@ -322,8 +322,9 @@ export class FlashcardAgent extends OpenAIAgent {
       answer: string;
       topic_id: number | null;
       topic_label: string | null;
+      subtopic: string | null;
     }>(
-      `SELECT f.id, f.question, f.answer, f.topic_id, t.label AS topic_label
+      `SELECT f.id, f.question, f.answer, f.topic_id, t.label AS topic_label, f.subtopic
        FROM flashcards f
        LEFT JOIN topics t ON f.topic_id = t.id
        WHERE f.id = $1`,
@@ -337,6 +338,7 @@ export class FlashcardAgent extends OpenAIAgent {
       answer: r.answer,
       topicId: r.topic_id,
       topicLabel: r.topic_label,
+      subtopic: r.subtopic ?? null,
     };
   }
 }

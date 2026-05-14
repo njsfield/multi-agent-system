@@ -1,5 +1,4 @@
 import type { FlashcardAgent } from "./flashcard-agent";
-import type { MindmapAgent } from "./mindmap-agent";
 
 export interface ToolCallRequest {
   toolName: string;
@@ -112,6 +111,18 @@ export interface FlashcardCard {
   answer: string;
   topicId: number | null;
   topicLabel: string | null;
+  subtopic: string | null;
+}
+
+export interface TopicTree {
+  id: number;
+  label: string;
+  subtopics: string[];
+}
+
+export interface FlashcardFilter {
+  topicIds?: number[];
+  subtopics?: Array<{ topicId: number; subtopic: string }>;
 }
 
 export interface MindmapNode {
@@ -136,5 +147,6 @@ export interface AgentServerOptions {
   staticDir?: string;
   getHistory?: (limit: number) => Promise<HistoryMessage[]>;
   flashcardAgent?: FlashcardAgent;
-  mindmapAgent?: MindmapAgent;
+  getMindmap?: () => Promise<MindmapGraph>;
+  getTopics?: () => Promise<TopicTree[]>;
 }
