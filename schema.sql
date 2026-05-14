@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS flashcards (
   question          TEXT NOT NULL,
   answer            TEXT NOT NULL,
   topic_id          BIGINT REFERENCES topics(id) ON DELETE SET NULL,
+  subtopic          TEXT,
   source_message_id BIGINT REFERENCES messages(id) ON DELETE SET NULL,
   embedding         VECTOR(1536),
   interval_days     INT NOT NULL DEFAULT 1,
@@ -48,6 +49,13 @@ CREATE TABLE IF NOT EXISTS flashcards (
 
 CREATE INDEX IF NOT EXISTS idx_flashcards_embedding
   ON flashcards USING hnsw (embedding vector_cosine_ops);
+
+CREATE TABLE IF NOT EXISTS mindmap_cache (
+  id         INT PRIMARY KEY DEFAULT 1,
+  graph      JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT mindmap_cache_single_row CHECK (id = 1)
+);
 
 CREATE TABLE IF NOT EXISTS flashcard_reviews (
   id           BIGSERIAL PRIMARY KEY,
