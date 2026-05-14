@@ -1,5 +1,5 @@
 import path from "path";
-import { AgentServerOptions } from "./types";
+import { AgentServerOptions, FlashcardFilter } from "./types";
 import express, { Application, Request, Response } from "express";
 
 export type StreamItem = Record<string, unknown>;
@@ -101,6 +101,10 @@ export function createAgentServer(
     res.sendStatus(204);
   });
 
+  app.options("/topics", (_req: Request, res: Response) => {
+    res.sendStatus(204);
+  });
+
   app.post("/chat", async (req: Request, res: Response) => {
     const message = (req.body as { message?: string }).message?.trim();
 
@@ -186,6 +190,30 @@ export function createAgentServer(
     }
   });
 
+  app.post("/flashcard", async (req: Request, res: Response) => {
+    if (!options.flashcardAgent) {
+      res.status(404).json({ error: "Flashcard not configured" });
+      return;
+    }
+    const body = req.body as { topicIds?: unknown; subtopics?: unknown };
+    const filter: FlashcardFilter = {
+      topicIds: Array.isArray(body.topicIds)
+        ? (body.topicIds as number[]).filter((x) => typeof x === "number")
+        : undefined,
+      subtopics: Array.isArray(body.subtopics)
+        ? (body.subtopics as Array<{ topicId: number; subtopic: string }>).filter(
+            (x) => typeof x.topicId === "number" && typeof x.subtopic === "string",
+          )
+        : undefined,
+    };
+    try {
+      const card = await options.flashcardAgent.selectForReview(filter);
+      res.json(card ?? null);
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
   app.post("/flashcard/:id/review", async (req: Request, res: Response) => {
     if (!options.flashcardAgent) {
       res.status(404).json({ error: "Flashcard not configured" });
@@ -213,16 +241,28 @@ export function createAgentServer(
   });
 
   app.get("/mindmap", async (_req: Request, res: Response) => {
-    if (!options.mindmapAgent) {
+    if (!options.getMindmap) {
       res.status(404).json({ error: "Mindmap not configured" });
       return;
     }
     try {
-      res.json(await options.mindmapAgent.getGraph());
+      res.json(await options.getMindmap());
     } catch (err) {
       res
         .status(500)
         .json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  app.get("/topics", async (_req: Request, res: Response) => {
+    if (!options.getTopics) {
+      res.status(404).json({ error: "Topics not configured" });
+      return;
+    }
+    try {
+      res.json(await options.getTopics());
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 
