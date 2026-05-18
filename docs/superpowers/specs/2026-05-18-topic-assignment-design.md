@@ -126,9 +126,38 @@ Replace single JOIN query with:
 1. `SELECT id, label, parent_id FROM topics ORDER BY label`
 2. Assemble tree in TypeScript: root topics with `children` arrays
 
+### `FlashcardAgent` constructor
+
+Signature changes from `constructor(pool: pg.Pool)` to `constructor(pool: pg.Pool, openai: OpenAI)` so it can pass the client to `TopicAssignmentAgent`. The `openaiClient` already exists in `start-server.ts` and is passed through.
+
 ### `start-server.ts`
 
-No changes. `TopicAssignmentAgent` is constructed inside `FlashcardAgent`.
+One change: `new FlashcardAgent(pool)` → `new FlashcardAgent(pool, openaiClient)`.
+
+---
+
+## Backfill Script
+
+New file: `src/scripts/backfill-topics.ts`
+
+A one-off CLI script that retroactively assigns topics to all existing flashcards with `topic_id = null`. Run with:
+
+```bash
+npx ts-node src/scripts/backfill-topics.ts
+```
+
+**Algorithm:**
+
+1. Fetch all flashcards where `topic_id IS NULL`, ordered by `id ASC`
+2. Process in batches of 20 (keeps LLM prompt size manageable)
+3. For each batch, call `TopicAssignmentAgent.assignTopics(batchIds)` — same logic as the live pipeline, so new topics are created dynamically as needed
+4. Log progress: `[backfill] batch N/M — assigned X cards, created Y new topics`
+5. After all batches complete, check every topic for the split condition (≥6 cards, `parent_id IS NULL`) and run any pending splits sequentially (not fire-and-forget, so the script completes fully before exiting)
+6. Print a summary: total cards assigned, topics created, topics split
+
+**Idempotency:** Safe to run multiple times — only processes cards with `topic_id IS NULL`, so already-assigned cards are skipped.
+
+**Error handling:** If a batch fails, log the error and continue with the next batch. Report failed batch IDs in the summary so they can be retried.
 
 ---
 
@@ -169,4 +198,9 @@ User sends message
               → 2 child topics created, cards re-assigned
 UI /topics endpoint
   → getTopicsWithSubtopics() returns tree: root topics + children
+
+One-off backfill (manual)
+  → npx ts-node src/scripts/backfill-topics.ts
+  → processes all topic_id=null cards in batches of 20
+  → runs any pending splits sequentially on completion
 ```
