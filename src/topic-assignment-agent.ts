@@ -82,7 +82,7 @@ For each flashcard, assign it to the most relevant existing topic (provide topic
     // Create new topics, deduplicating labels within this batch
     const newLabelToId = new Map<string, number>();
     for (const a of assignments) {
-      if (a.newTopicLabel && !newLabelToId.has(a.newTopicLabel)) {
+      if (a.newTopicLabel && !a.topicId && !newLabelToId.has(a.newTopicLabel)) {
         const { rows } = await this.pool.query<{ id: number }>(
           "INSERT INTO topics (label) VALUES ($1) RETURNING id",
           [a.newTopicLabel],
@@ -115,7 +115,7 @@ For each flashcard, assign it to the most relevant existing topic (provide topic
          FROM topics t
          LEFT JOIN flashcards f ON f.topic_id = t.id
          WHERE t.id = $1
-         GROUP BY t.parent_id`,
+         GROUP BY t.id, t.parent_id`,
         [topicId],
       );
       if (rows[0] && parseInt(rows[0].count) >= 6 && rows[0].parent_id === null) {
@@ -140,7 +140,7 @@ For each flashcard, assign it to the most relevant existing topic (provide topic
          FROM topics t
          LEFT JOIN flashcards f ON f.topic_id = t.id
          WHERE t.id = $1
-         GROUP BY t.parent_id`,
+         GROUP BY t.id, t.parent_id`,
         [topicId],
       );
 
