@@ -248,7 +248,7 @@ const PORT = 3000;
     const pgMemory = new PgVectorMemory(pool, openaiClient);
     agentMemory = pgMemory;
     getHistory = (limit) => pgMemory.getHistory(limit);
-    flashcardAgent = new FlashcardAgent(pool);
+    flashcardAgent = new FlashcardAgent(pool, openaiClient);
 
     const mindmapClient = new MindmapMcpClient();
     await mindmapClient.connect();

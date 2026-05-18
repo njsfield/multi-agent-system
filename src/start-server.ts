@@ -11,6 +11,7 @@ import type { BaseMemory } from "./memory";
 import type { HistoryMessage, MindmapGraph } from "./types";
 import { FlashcardAgent } from "./flashcard-agent";
 import { MindmapMcpClient } from "./mcp-client";
+import { webSearchTool } from "./web-search-tool";
 
 config({ path: path.join(__dirname, "../.env") });
 
@@ -35,7 +36,7 @@ async function startServer() {
     const pgMemory = new PgVectorMemory(pool, openaiClient);
     agentMemory = pgMemory;
     getHistory = (limit) => pgMemory.getHistory(limit);
-    flashcardAgent = new FlashcardAgent(pool);
+    flashcardAgent = new FlashcardAgent(pool, openaiClient);
     getTopics = () => flashcardAgent!.getTopicsWithSubtopics();
 
     mindmapClient = new MindmapMcpClient();
@@ -72,10 +73,10 @@ async function startServer() {
   function createChatAgent(): OpenAIAgent {
     return new OpenAIAgent(
       "chat-agent",
-      "You are a helpful AI assistant. Answer questions conversationally and provide useful information. When the user asks about previous topics or what's been discussed, use the get_mindmap tool to see the conversation's topic structure.",
+      "You are a helpful AI assistant. Answer questions conversationally and provide useful information. When the user asks you to look something up online, call web_search with a search query — it returns real page content from the top results in a single call, so synthesize that content directly into your answer. When the user asks about previous topics or what's been discussed, use the get_mindmap tool to see the conversation's topic structure.",
       {
         memory: agentMemory,
-        tools: [getMindmapTool],
+        tools: [getMindmapTool, webSearchTool],
         middleware: [new LoggingMiddleware()],
         streamTokens: true,
       },
@@ -93,7 +94,9 @@ async function startServer() {
         yield item;
       }
       if (flashcardAgent) {
-        flashcardAgent.extract(message, lastAssistantContent).catch(console.error);
+        flashcardAgent
+          .extract(message, lastAssistantContent)
+          .catch(console.error);
       }
     },
     {
