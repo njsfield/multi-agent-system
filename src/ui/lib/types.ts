@@ -1,10 +1,10 @@
 export interface TopicTree {
   id: number;
   label: string;
-  subtopics: string[];
+  parentId: number | null;
+  children: { id: number; label: string }[];
 }
 
 export interface FlashcardFilter {
   topicIds?: number[];
-  subtopics?: Array<{ topicId: number; subtopic: string }>;
 }
