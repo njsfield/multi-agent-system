@@ -278,7 +278,7 @@ export class FlashcardAgent extends OpenAIAgent {
       `SELECT t.id, t.label,
          array_agg(DISTINCT f.subtopic) FILTER (WHERE f.subtopic IS NOT NULL) AS subtopics
        FROM topics t
-       JOIN flashcards f ON f.topic_id = t.id
+       LEFT JOIN flashcards f ON f.topic_id = t.id
        GROUP BY t.id, t.label
        ORDER BY t.label`,
     );
@@ -305,6 +305,9 @@ export class FlashcardAgent extends OpenAIAgent {
         subtopic = rows[0].subtopic;
       }
     }
+
+    // Fall back to topic determination from the message content when no topic was found
+    // (TODO: This will be handled by TopicAssignmentAgent in Task 4)
 
     this._extractState.savedCards = [];
     this.context.messages = [];
