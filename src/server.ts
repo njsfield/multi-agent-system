@@ -195,15 +195,10 @@ export function createAgentServer(
       res.status(404).json({ error: "Flashcard not configured" });
       return;
     }
-    const body = req.body as { topicIds?: unknown; subtopics?: unknown };
+    const body = req.body as { topicIds?: unknown };
     const filter: FlashcardFilter = {
       topicIds: Array.isArray(body.topicIds)
         ? (body.topicIds as number[]).filter((x) => typeof x === "number")
-        : undefined,
-      subtopics: Array.isArray(body.subtopics)
-        ? (body.subtopics as Array<{ topicId: number; subtopic: string }>).filter(
-            (x) => typeof x.topicId === "number" && typeof x.subtopic === "string",
-          )
         : undefined,
     };
     try {
