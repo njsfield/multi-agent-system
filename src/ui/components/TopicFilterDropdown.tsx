@@ -22,30 +22,16 @@ export function TopicFilterDropdown({ topics, filter, onChange }: Props) {
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  const selectedCount =
-    (filter.topicIds?.length ?? 0) + (filter.subtopics?.length ?? 0);
+  const selectedCount = filter.topicIds?.length ?? 0;
 
-  const isTopicSelected = (id: number) =>
-    filter.topicIds?.includes(id) ?? false;
+  const isSelected = (id: number) => filter.topicIds?.includes(id) ?? false;
 
-  const isSubtopicSelected = (topicId: number, subtopic: string) =>
-    filter.subtopics?.some((s) => s.topicId === topicId && s.subtopic === subtopic) ?? false;
-
-  const toggleTopic = (id: number) => {
+  const toggle = (id: number) => {
     const topicIds = filter.topicIds ?? [];
     const next = topicIds.includes(id)
       ? topicIds.filter((x) => x !== id)
       : [...topicIds, id];
-    onChange({ ...filter, topicIds: next.length > 0 ? next : undefined });
-  };
-
-  const toggleSubtopic = (topicId: number, subtopic: string) => {
-    const subs = filter.subtopics ?? [];
-    const exists = subs.some((s) => s.topicId === topicId && s.subtopic === subtopic);
-    const next = exists
-      ? subs.filter((s) => !(s.topicId === topicId && s.subtopic === subtopic))
-      : [...subs, { topicId, subtopic }];
-    onChange({ ...filter, subtopics: next.length > 0 ? next : undefined });
+    onChange({ topicIds: next.length > 0 ? next : undefined });
   };
 
   const clearAll = () => onChange({});
@@ -130,16 +116,8 @@ export function TopicFilterDropdown({ topics, filter, onChange }: Props) {
           )}
           {topics.map((topic) => (
             <div key={topic.id}>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  padding: "4px 12px",
-                  cursor: "pointer",
-                }}
-              >
-                {topic.subtopics.length > 0 && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 12px", cursor: "pointer" }}>
+                {topic.children.length > 0 && (
                   <button
                     type="button"
                     onClick={() => toggleExpand(topic.id)}
@@ -152,40 +130,41 @@ export function TopicFilterDropdown({ topics, filter, onChange }: Props) {
                     )}
                   </button>
                 )}
-                {topic.subtopics.length === 0 && <span style={{ width: 12 }} />}
+                {topic.children.length === 0 && <span style={{ width: 12 }} />}
                 <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13, color: "var(--foreground)", userSelect: "none", flex: 1 }}>
                   <input
                     type="checkbox"
-                    checked={isTopicSelected(topic.id)}
-                    onChange={() => toggleTopic(topic.id)}
+                    checked={isSelected(topic.id)}
+                    onChange={() => toggle(topic.id)}
                     style={{ cursor: "pointer" }}
                   />
                   {topic.label}
                 </label>
               </div>
-              {expanded.has(topic.id) && topic.subtopics.map((sub) => (
-                <label
-                  key={sub}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    padding: "3px 12px 3px 32px",
-                    cursor: "pointer",
-                    fontSize: 12,
-                    color: "var(--muted-foreground)",
-                    userSelect: "none",
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={isSubtopicSelected(topic.id, sub)}
-                    onChange={() => toggleSubtopic(topic.id, sub)}
-                    style={{ cursor: "pointer" }}
-                  />
-                  {sub}
-                </label>
-              ))}
+              {expanded.has(topic.id) &&
+                topic.children.map((child) => (
+                  <label
+                    key={child.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "3px 12px 3px 32px",
+                      cursor: "pointer",
+                      fontSize: 12,
+                      color: "var(--muted-foreground)",
+                      userSelect: "none",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected(child.id)}
+                      onChange={() => toggle(child.id)}
+                      style={{ cursor: "pointer" }}
+                    />
+                    {child.label}
+                  </label>
+                ))}
             </div>
           ))}
         </div>
