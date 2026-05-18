@@ -1,8 +1,10 @@
 import pg from "pg";
+import OpenAI from "openai";
 import { OpenAIAgent } from "./openai-agent";
 import { FunctionTool } from "./tool";
 import { OtelMiddleware } from "./otel-middleware";
 import type { FlashcardCard, DueCard, FlashcardFilter, TopicTree } from "./types";
+import { TopicAssignmentAgent } from "./topic-assignment-agent";
 
 // ---------------------------------------------------------------------------
 // SM-2 spaced-repetition algorithm
@@ -89,11 +91,6 @@ function buildSelectionTools(
 
       if (filter?.topicIds && filter.topicIds.length > 0) {
         parts.push(`f.topic_id = ANY($${args.push(filter.topicIds)}::int[])`);
-      }
-      if (filter?.subtopics && filter.subtopics.length > 0) {
-        for (const { topicId, subtopic } of filter.subtopics) {
-          parts.push(`(f.topic_id = $${args.push(topicId)} AND f.subtopic = $${args.push(subtopic)})`);
-        }
       }
 
       const filterClause = parts.length > 0 ? `AND (${parts.join(" OR ")})` : "";
@@ -227,8 +224,9 @@ export class FlashcardAgent extends OpenAIAgent {
   private _state: { selectedId: number | null };
   private _extractState: { savedCards: Array<{ question: string; answer: string }> };
   private _filterRef: { current: FlashcardFilter | undefined };
+  private _topicAgent: TopicAssignmentAgent;
 
-  constructor(pool: pg.Pool) {
+  constructor(pool: pg.Pool, openai: OpenAI) {
     const state = { selectedId: null as number | null };
     const extractState = { savedCards: [] as Array<{ question: string; answer: string }> };
     const filterRef = { current: undefined as FlashcardFilter | undefined };
@@ -246,6 +244,7 @@ export class FlashcardAgent extends OpenAIAgent {
     this._state = state;
     this._extractState = extractState;
     this._filterRef = filterRef;
+    this._topicAgent = new TopicAssignmentAgent(pool, openai);
   }
 
   async selectForReview(filter?: FlashcardFilter): Promise<FlashcardCard | null> {
@@ -254,9 +253,7 @@ export class FlashcardAgent extends OpenAIAgent {
     this.instructions = SELECTION_INSTRUCTIONS;
     this._state.selectedId = null;
 
-    const hasFilter =
-      (filter?.topicIds?.length ?? 0) > 0 ||
-      (filter?.subtopics?.length ?? 0) > 0;
+    const hasFilter = (filter?.topicIds?.length ?? 0) > 0;
 
     const prompt = hasFilter
       ? `Select a flashcard for review using the active topic filter. Call get_due_flashcards, then select_card.`
@@ -273,41 +270,30 @@ export class FlashcardAgent extends OpenAIAgent {
     const { rows } = await this._pool.query<{
       id: number;
       label: string;
-      subtopics: string[] | null;
-    }>(
-      `SELECT t.id, t.label,
-         array_agg(DISTINCT f.subtopic) FILTER (WHERE f.subtopic IS NOT NULL) AS subtopics
-       FROM topics t
-       LEFT JOIN flashcards f ON f.topic_id = t.id
-       GROUP BY t.id, t.label
-       ORDER BY t.label`,
-    );
-    return rows.map((r) => ({
-      id: r.id,
-      label: r.label,
-      subtopics: r.subtopics ?? [],
-    }));
-  }
+      parent_id: number | null;
+    }>("SELECT id, label, parent_id FROM topics ORDER BY label");
 
-  async extract(userMsg: string, assistantMsg: string, sourceMessageId?: number): Promise<void> {
-    if (!assistantMsg.trim()) return;
-
-    // Fetch subtopic from source message if we have its id
-    let subtopic: string | null = null;
-    let topicId: number | null = null;
-    if (sourceMessageId != null) {
-      const { rows } = await this._pool.query<{ topic_id: number | null; subtopic: string | null }>(
-        'SELECT topic_id, subtopic FROM messages WHERE id = $1',
-        [sourceMessageId],
-      );
-      if (rows[0]) {
-        topicId = rows[0].topic_id;
-        subtopic = rows[0].subtopic;
+    const childrenByParent = new Map<number, { id: number; label: string }[]>();
+    for (const row of rows) {
+      if (row.parent_id !== null) {
+        const arr = childrenByParent.get(row.parent_id) ?? [];
+        arr.push({ id: row.id, label: row.label });
+        childrenByParent.set(row.parent_id, arr);
       }
     }
 
-    // Fall back to topic determination from the message content when no topic was found
-    // (TODO: This will be handled by TopicAssignmentAgent in Task 4)
+    return rows
+      .filter((r) => r.parent_id === null)
+      .map((r) => ({
+        id: r.id,
+        label: r.label,
+        parentId: null,
+        children: childrenByParent.get(r.id) ?? [],
+      }));
+  }
+
+  async extract(userMsg: string, assistantMsg: string): Promise<void> {
+    if (!assistantMsg.trim()) return;
 
     this._extractState.savedCards = [];
     this.context.messages = [];
@@ -317,16 +303,20 @@ export class FlashcardAgent extends OpenAIAgent {
       `Extract flashcards from this exchange:\n\nUser: "${userMsg}"\nAssistant: "${assistantMsg}"`,
     );
 
-    // Persist each candidate independently, checking for duplicates
+    const newIds: number[] = [];
     for (const card of this._extractState.savedCards) {
       const isDup = await this._isDuplicate(card.question);
       if (!isDup) {
-        await this._pool.query(
-          `INSERT INTO flashcards (question, answer, topic_id, subtopic, source_message_id)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [card.question, card.answer, topicId, subtopic, sourceMessageId ?? null],
+        const { rows } = await this._pool.query<{ id: number }>(
+          `INSERT INTO flashcards (question, answer) VALUES ($1, $2) RETURNING id`,
+          [card.question, card.answer],
         );
+        if (rows[0]) newIds.push(rows[0].id);
       }
+    }
+
+    if (newIds.length > 0) {
+      this._topicAgent.assignTopics(newIds).catch(console.error);
     }
   }
 
@@ -396,9 +386,8 @@ export class FlashcardAgent extends OpenAIAgent {
       answer: string;
       topic_id: number | null;
       topic_label: string | null;
-      subtopic: string | null;
     }>(
-      `SELECT f.id, f.question, f.answer, f.topic_id, t.label AS topic_label, f.subtopic
+      `SELECT f.id, f.question, f.answer, f.topic_id, t.label AS topic_label
        FROM flashcards f
        LEFT JOIN topics t ON f.topic_id = t.id
        WHERE f.id = $1`,
@@ -412,7 +401,6 @@ export class FlashcardAgent extends OpenAIAgent {
       answer: r.answer,
       topicId: r.topic_id,
       topicLabel: r.topic_label,
-      subtopic: r.subtopic ?? null,
     };
   }
 }
