@@ -6,8 +6,9 @@
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS topics (
-  id    BIGSERIAL PRIMARY KEY,
-  label TEXT UNIQUE NOT NULL
+  id        BIGSERIAL PRIMARY KEY,
+  label     TEXT UNIQUE NOT NULL,
+  parent_id BIGINT REFERENCES topics(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -36,7 +37,6 @@ CREATE TABLE IF NOT EXISTS flashcards (
   question          TEXT NOT NULL,
   answer            TEXT NOT NULL,
   topic_id          BIGINT REFERENCES topics(id) ON DELETE SET NULL,
-  subtopic          TEXT,
   source_message_id BIGINT REFERENCES messages(id) ON DELETE SET NULL,
   embedding         VECTOR(1536),
   interval_days     INT NOT NULL DEFAULT 1,
