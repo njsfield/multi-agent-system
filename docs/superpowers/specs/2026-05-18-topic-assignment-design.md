@@ -140,7 +140,7 @@ One change: `new FlashcardAgent(pool)` → `new FlashcardAgent(pool, openaiClien
 
 New file: `src/scripts/backfill-topics.ts`
 
-A one-off CLI script that retroactively assigns topics to all existing flashcards with `topic_id = null`. Run with:
+A destructive reset-and-rebuild CLI script. It wipes all existing topics and assignments, then re-derives a fresh topic tree from scratch across all flashcards. Run with:
 
 ```bash
 npx ts-node src/scripts/backfill-topics.ts
@@ -148,16 +148,20 @@ npx ts-node src/scripts/backfill-topics.ts
 
 **Algorithm:**
 
-1. Fetch all flashcards where `topic_id IS NULL`, ordered by `id ASC`
-2. Process in batches of 20 (keeps LLM prompt size manageable)
-3. For each batch, call `TopicAssignmentAgent.assignTopics(batchIds)` — same logic as the live pipeline, so new topics are created dynamically as needed
-4. Log progress: `[backfill] batch N/M — assigned X cards, created Y new topics`
-5. After all batches complete, check every topic for the split condition (≥6 cards, `parent_id IS NULL`) and run any pending splits sequentially (not fire-and-forget, so the script completes fully before exiting)
-6. Print a summary: total cards assigned, topics created, topics split
+1. **Destructive reset (in a transaction):**
+   - `UPDATE flashcards SET topic_id = NULL` — clear all topic assignments
+   - `DELETE FROM topics` — remove all topics (cascade clears `parent_id` references)
+   - Commit
+2. Fetch all flashcard IDs ordered by `id ASC`
+3. Process in batches of 20 (keeps LLM prompt size manageable)
+4. For each batch, call `TopicAssignmentAgent.assignTopics(batchIds)` — topics are created dynamically from scratch as needed
+5. Log progress: `[backfill] batch N/M — assigned X cards, created Y new topics`
+6. After all batches complete, check every topic for the split condition (≥6 cards, `parent_id IS NULL`) and run any pending splits sequentially (not fire-and-forget, so the script completes fully before exiting)
+7. Print a summary: total cards assigned, topics created, topics split
 
-**Idempotency:** Safe to run multiple times — only processes cards with `topic_id IS NULL`, so already-assigned cards are skipped.
+**Destructive by design:** Every run wipes and rebuilds the full topic tree. Not idempotent — run only when a full reset is intended.
 
-**Error handling:** If a batch fails, log the error and continue with the next batch. Report failed batch IDs in the summary so they can be retried.
+**Error handling:** If the destructive reset transaction fails, abort entirely (no partial state). If a batch fails during assignment, log the error and continue with the next batch. Report failed batch IDs in the summary.
 
 ---
 
@@ -199,8 +203,9 @@ User sends message
 UI /topics endpoint
   → getTopicsWithSubtopics() returns tree: root topics + children
 
-One-off backfill (manual)
+Destructive reset + rebuild (manual, one-off)
   → npx ts-node src/scripts/backfill-topics.ts
-  → processes all topic_id=null cards in batches of 20
+  → wipes all topics + assignments
+  → re-assigns all flashcards in batches of 20
   → runs any pending splits sequentially on completion
 ```
